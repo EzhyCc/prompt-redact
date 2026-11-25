@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 // 把引擎源码和规则内联进客户端插件，生成 lib/client.js。
 //
-// 为什么要构建：客户端插件跑在 DSH 渲染进程里，只能 require 宿主白名单里的模块
-// （react / react-dom / @deepseek-ai/dsh-client-ui-primitives），读不到仓库里的文件。
-// 所以匹配逻辑与规则必须在构建时静态内联。
+// 为什么要构建：客户端插件跑在 DSH 渲染进程里，只能 require 宿主提供的共享模块
+// （react），读不到仓库里的文件。所以匹配逻辑与规则必须在构建时静态内联。
 //
 // 做法：按依赖顺序拼接 src/*.js，去掉 import 行、剥掉 export 关键字。
 // 引擎只有 376 行、无循环依赖、无默认导出，这种朴素转换是安全的——
-// 转换后会用真正的 fixture 跑一遍自测来兜底（见 test/client.selftest.js）。
+// 转换后用 test/client.selftest.js 在 vm 里真跑一遍来兜底。
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -34,9 +34,14 @@ function toScript(file) {
     .trim();
 }
 
-const engine = ORDER.map(toScript).join('\n\n');
+// 缩进四格，让内联后的代码在 factory 里读起来不别扭
+const engine = ORDER
+  .map(toScript)
+  .join('\n\n')
+  .split('\n')
+  .map(line => (line.trim() ? `      ${line}` : line))
+  .join('\n');
 
-// 规则：manifest 列文件，逐个读进来
 const rulesDir = join(ROOT, 'rules', 'zh-CN');
 const manifest = JSON.parse(readFileSync(join(rulesDir, 'manifest.json'), 'utf8'));
 const rules = [];
@@ -47,7 +52,7 @@ for (const file of manifest.files) {
 
 const template = readFileSync(join(ROOT, 'lib', 'client.template.js'), 'utf8');
 const output = template
-  .replace('    /*__ENGINE_START__*/\n    /*__ENGINE_END__*/', () => engine)
+  .replace(/[ \t]*\/\*__ENGINE_START__\*\/[\s\S]*?\/\*__ENGINE_END__\*\//, () => engine.trimEnd())
   .replace('/*__RULES__*/ []', () => JSON.stringify(rules));
 
 if (output.includes('__ENGINE_START__') || output.includes('__RULES__')) {
@@ -58,6 +63,15 @@ if (output.includes('__ENGINE_START__') || output.includes('__RULES__')) {
 const target = join(ROOT, 'lib', 'client.js');
 writeFileSync(target, output, 'utf8');
 
+// 语法自检：这是普通脚本（不是 ESM），--check 直接可用
+const probe = join(ROOT, 'lib', '.client-check.js');
+copyFileSync(target, probe);
+try {
+  execFileSync(process.execPath, ['--check', probe], { stdio: 'pipe' });
+} finally {
+  unlinkSync(probe);
+}
+
 console.log(`引擎 ${ORDER.length} 个模块、${engine.split('\n').length} 行已内联`);
 console.log(`规则 ${rules.length} 条已内联`);
-console.log(`生成: ${target}（${Math.round(output.length / 1024)} KB）`);
+console.log(`生成: ${target}（${Math.round(output.length / 1024)} KB，语法检查通过）`);
