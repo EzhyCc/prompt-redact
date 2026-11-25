@@ -14,7 +14,8 @@
   "scripts": {
     "test": "node test/selftest.js",
     "demo": "node demo.js",
-    "redact": "node tools/cli.js"
+    "redact": "node tools/cli.js",
+    "serve": "node tools/serve.js"
   },
   "files": [
     "src",

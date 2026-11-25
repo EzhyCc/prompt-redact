@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Redact · 规则调试器</title>
+<style>
+  :root {
+    --bg: #faf8f5;
+    --panel: #ffffff;
+    --ink: #23201d;
+    --muted: #7a736c;
+    --line: #e3ddd5;
+    --hit: #ffe08a;
+    --accent: #b4552a;
+    --mono: 13px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 28px 60px;
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: .3px; }
+  h2 { font-size: 13.5px; margin: 0 0 8px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .banner {
+    display: none; padding: 12px 14px; margin-bottom: 14px; border-radius: 8px;
+    background: #fff4e5; border: 1px solid #f0d3ac; color: #7a4b12;
+  }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center;
+    padding: 12px 14px; margin-bottom: 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .bar input[type=text] {
+    width: 210px; padding: 4px 8px; font: inherit;
+    border: 1px solid var(--line); border-radius: 5px; background: #fff;
+  }
+  .bar input[type=text]:disabled { background: #f4f1ec; color: #b3aca4; }
+  .stat { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .stat b { color: var(--ink); font-weight: 600; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .panel {
+    display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  }
+  .panel > header {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px; color: var(--muted); letter-spacing: .4px;
+  }
+  .panel > header .spacer { margin-left: auto; }
+
+  /* 原文面板：<pre> 在底下画高亮，textarea 用透明文字浮在上面，两者字体/内边距必须完全一致 */
+  .editor { position: relative; }
+  .editor > pre,
+  .editor > textarea {
+    margin: 0; padding: 12px; border: 0;
+    font: var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    tab-size: 4;
+  }
+  .editor > pre {
+    position: absolute; inset: 0; overflow: hidden;
+    color: transparent; pointer-events: none;
+  }
+  .editor > pre mark { background: var(--hit); color: transparent; border-radius: 2px; }
+  .editor > textarea {
+    position: relative; display: block; width: 100%;
+    min-height: 220px; resize: vertical; outline: 0;
+    background: transparent; color: var(--ink); caret-color: var(--ink);
+  }
+  .editor > textarea::selection { background: #cfe3ff; }
+
+  #output {
+    margin: 0; padding: 12px; min-height: 220px;
+    font: var(--mono);
+    white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
+  }
+  .tok { color: var(--accent); font-weight: 600; }
+
+  button {
+    font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer;
+    background: #fff; border: 1px solid var(--line); border-radius: 5px; color: var(--ink);
+  }
+  button:hover { border-color: #c9c1b7; }
+  button:active { background: #f3efe9; }
+
+  .section { margin-top: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; letter-spacing: .4px; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  tr.dropped td { color: #a49d95; }
+  tr.note td { color: #a49d95; font-style: italic; padding-top: 0; border-bottom: 1px solid var(--line); }
+  .empty { padding: 14px 12px; color: var(--muted); font-size: 12.5px; }
+
+  .claim { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .claim input[type=text] {
+    width: 100%; padding: 6px 9px; font: inherit;
+    border: 1px solid var(--line); border-radius: 5px;
+  }
+  .claim .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  #claimOut { display: none; margin-top: 10px; }
+  #claimOut pre {
+    margin: 0; padding: 10px 12px; font: 12px/1.6 ui-monospace, Consolas, monospace;
+    background: #f7f4f0; border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap;
+  }
+  code { font-family: ui-monospace, Consolas, monospace; background: #f2eee8; padding: 0 3px; border-radius: 3px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>Prompt Redact · 规则调试器</h1>
+<div class="sub">粘贴任意文本，看规则的实际命中与漏检。所有处理都在你自己的浏览器里完成，不发送任何数据。</div>
+
+<div id="banner" class="banner"></div>
+
+<div class="bar">
+  <label><input type="checkbox" id="optSemantic"> 启用语义类规则</label>
+  <label><input type="checkbox" id="optTerms"> 启用个人词表</label>
+  <input type="text" id="termsInput" placeholder="张三, 某某公司（逗号分隔）" disabled>
+  <label><input type="checkbox" id="optDropped"> 显示被丢弃的命中</label>
+  <div class="stat" id="stat">加载规则中…</div>
+</div>
+
+<div class="cols">
+  <section class="panel">
+    <header>原文（高亮 = 将被替换）<span class="spacer"></span><span id="hitCount"></span></header>
+    <div class="editor">
+      <pre id="mirror" aria-hidden="true"></pre>
+      <textarea id="input" spellcheck="false"></textarea>
+    </div>
+  </section>
+  <section class="panel">
+    <header>脱敏后（这才是会发给 AI 的内容）<span class="spacer"></span><button id="copy">复制</button></header>
+    <pre id="output"></pre>
+  </section>
+</div>
+
+<div class="section">
+  <h2>命中表</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>规则 id</th><th>名称</th><th>类别</th><th>严重度</th><th>token</th><th>原文坐标</th></tr>
+      </thead>
+      <tbody id="hits"></tbody>
+    </table>
+    <div class="empty" id="hitsEmpty" style="display:none">没有命中。这段文本要么不含规则覆盖的格式，要么就是漏检了——往下面填。</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>漏检申诉</h2>
+  <div class="claim">
+    <div class="hint" style="margin-top:0">填一段「我认为该被删、但上面没删」的文字，生成一条能直接加进规则库的 JSON。</div>
+    <input type="text" id="claimText" placeholder="例如：某某医院 呼吸内科 王医生">
+    <div class="row">
+      <button id="claimBtn">生成规则</button>
+      <button id="claimCopy" style="display:none">复制 JSON</button>
+      <span class="hint" style="margin:0">加进 <code>rules/zh-CN/</code>，在 <code>test/rule-samples.json</code> 补 2 正例 2 负例，然后跑 <code>node test/selftest.js</code></span>
+    </div>
+    <div id="claimOut"><pre></pre></div>
+  </div>
+</div>
+
+<script type="module">
+import { redact, scan, resolveConflicts } from '../src/index.js';
+import { Session } from '../src/session.js';
+
+const RULE_FILES = ['contact', 'identity', 'credential', 'finance', 'network', 'semantic'];
+
+const SAMPLE = `甲方：深圳市云深科技有限公司
+联系人 张三，手机 138-0013-8000，身份证 110101199003071233
+回款卡号 6222021234567894，工号 A1027
+邮箱 zhang.san@yunshen-tech.com.cn，内网 10.12.33.44
+DB: mysql://root:Pa55w0rd@10.12.33.9:3306/prod
+Key: sk-proj-AbCdEf1234567890XyZq
+密码：Qwe!2345`;
+
+const $ = id => document.getElementById(id);
+const el = {
+  input: $('input'), mirror: $('mirror'), output: $('output'),
+  hits: $('hits'), hitsEmpty: $('hitsEmpty'), stat: $('stat'), hitCount: $('hitCount'),
+  banner: $('banner'), semantic: $('optSemantic'), terms: $('optTerms'),
+  termsInput: $('termsInput'), dropped: $('optDropped')
+};
+
+const allRules = [];
+const session = new Session();
+
+const esc = value => String(value).replace(/[&<>"']/g, ch => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+));
+
+function showBanner(message) {
+  el.banner.textContent = message;
+  el.banner.style.display = 'block';
+}
+
+async function loadRules() {
+  try {
+    const groups = await Promise.all(RULE_FILES.map(name =>
+      fetch(`../rules/zh-CN/${name}.json`, { cache: 'no-store' })
+        .then(res => { if (!res.ok) throw new Error(`${name}.json HTTP ${res.status}`); return res.json(); })
+    ));
+    for (const group of groups) allRules.push(...group.rules);
+    return true;
+  } catch (error) {
+    showBanner(`规则加载失败（${error.message}）。请用 node tools/serve.js 启动后访问 http://127.0.0.1:5173/ ，不要直接双击打开这个 HTML 文件。`);
+    return false;
+  }
+}
+
+// 与 redact() 用完全相同的规则集：语义类按开关取舍，个人词表作为运行时规则追加。
+// 因为这里已经过滤过，调用 redact 时传 enableSemantic: true 防止它二次过滤掉语义规则。
+function effectiveRules() {
+  const rules = allRules.filter(rule => el.semantic.checked || rule.tier !== 'semantic');
+  if (el.terms.checked) {
+    const terms = el.termsInput.value.split(',').map(item => item.trim()).filter(Boolean);
+    if (terms.length > 0) {
+      rules.push({
+        id: 'user-term', label: '自定义词', category: 'custom', tier: 'format',
+        severity: 'high', token: 'TERM',
+        match: terms.map(value => ({ type: 'literal', value }))
+      });
+    }
+  }
+  return rules;
+}
+
+// 镜像层与 textarea 逐字符对齐：末尾补一个换行，避免最后一行被裁掉
+function renderMirror(text, kept) {
+  let html = '';
+  let cursor = 0;
+  for (const hit of kept) {
+    html += esc(text.slice(cursor, hit.start));
+    html += `<mark title="${esc(hit.ruleId)}">${esc(text.slice(hit.start, hit.end))}</mark>`;
+    cursor = hit.end;
+  }
+  html += esc(text.slice(cursor));
+  el.mirror.innerHTML = `${html}\n`;
+}
+
+function renderOutput(text) {
+  el.output.innerHTML = esc(text).replace(/\[[A-Z]{2,12}_[0-9A-F]{4}\]/g, match => `<span class="tok">${match}</span>`);
+}
+
+function autoGrow() {
+  el.input.style.height = 'auto';
+  el.input.style.height = `${el.input.scrollHeight}px`;
+}
+
+function renderHits(kept, dropped) {
+  const rows = [];
+  for (const hit of kept) {
+    rows.push(`<tr>
+      <td class="mono">${esc(hit.ruleId)}</td>
+      <td>${esc(hit.label || '')}</td>
+      <td>${esc(hit.category || '')}</td>
+      <td>${esc(hit.severity || '')}</td>
+      <td class="mono">${hit.token ? esc(hit.token) : '—'}</td>
+      <td class="mono">${hit.start}:${hit.end}</td>
+    </tr>`);
+  }
+  if (el.dropped.checked) {
+    for (const hit of dropped) {
+      const covering = kept.find(keep => keep.start < hit.end && keep.end > hit.start);
+      rows.push(`<tr class="dropped">
+        <td class="mono">${esc(hit.ruleId)}</td>
+        <td>${esc(hit.label || '')}</td>
+        <td>${esc(hit.category || '')}</td>
+        <td>${esc(hit.severity || '')}</td>
+        <td class="mono">${hit.token ? esc(hit.token) : '—'}</td>
+        <td class="mono">${hit.start}:${hit.end}</td>
+      </tr>
+      <tr class="note"><td colspan="6">被 ${esc(covering ? covering.ruleId : '其它更长命中')} 覆盖，最终未单独替换</td></tr>`);
+    }
+  }
+  el.hits.innerHTML = rows.join('');
+}
+
+function run() {
+  if (allRules.length === 0) return;
+  const text = el.input.value;
+  const rules = effectiveRules();
+
+  const started = performance.now();
+  const result = redact(text, { rules, session, enableSemantic: true });
+  const elapsed = performance.now() - started;
+
+  const raw = scan(text, rules);
+  const kept = resolveConflicts(raw);
+  const dropped = raw.filter(hit => !kept.includes(hit));
+
+  renderMirror(text, kept);
+  renderOutput(result.text);
+  renderHits(kept, dropped);
+  autoGrow();
+
+  const highCount = result.hits.filter(hit => hit.severity === 'high').length;
+  el.stat.innerHTML = `命中 <b>${result.hits.length}</b> 项｜高危 <b>${highCount}</b> 项｜耗时 <b>${elapsed.toFixed(2)}</b> ms`
+    + (result.blocked ? '｜<b style="color:#b4552a">检测到高危残留</b>' : '');
+  el.hitCount.textContent = result.hits.length > 0 ? `${result.hits.length} 处` : '无';
+  el.hitsEmpty.style.display = result.hits.length === 0 ? 'block' : 'none';
+}
+
+let timer = null;
+const schedule = () => { clearTimeout(timer); timer = setTimeout(run, 160); };
+
+el.input.addEventListener('input', schedule);
+el.input.addEventListener('scroll', () => { el.mirror.scrollTop = el.input.scrollTop; });
+el.semantic.addEventListener('change', schedule);
+el.dropped.addEventListener('change', schedule);
+el.terms.addEventListener('change', () => {
+  el.termsInput.disabled = !el.terms.checked;
+  if (el.terms.checked) el.termsInput.focus();
+  schedule();
+});
+el.termsInput.addEventListener('input', schedule);
+
+$('copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(el.output.textContent);
+    $('copy').textContent = '已复制';
+    setTimeout(() => { $('copy').textContent = '复制'; }, 1200);
+  } catch { $('copy').textContent = '复制失败'; }
+});
+
+$('claimBtn').addEventListener('click', () => {
+  const value = $('claimText').value.trim();
+  const box = $('claimOut');
+  if (value === '') { box.style.display = 'none'; $('claimCopy').style.display = 'none'; return; }
+  const rule = {
+    id: `user-${Math.random().toString(16).slice(2, 6)}`,
+    label: value.length > 12 ? `${value.slice(0, 12)}…` : value,
+    category: 'custom',
+    tier: 'format',
+    severity: 'high',
+    token: 'TERM',
+    match: [{ type: 'literal', value }],
+    note: '由调试器生成'
+  };
+  box.querySelector('pre').textContent = JSON.stringify(rule, null, 2);
+  box.style.display = 'block';
+  $('claimCopy').style.display = 'inline-block';
+});
+
+$('claimCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('claimOut').querySelector('pre').textContent);
+    $('claimCopy').textContent = '已复制';
+    setTimeout(() => { $('claimCopy').textContent = '复制 JSON'; }, 1200);
+  } catch { $('claimCopy').textContent = '复制失败'; }
+});
+
+el.input.value = SAMPLE;
+if (await loadRules()) run();
+</script>
+</body>
+</html>
