@@ -34,12 +34,12 @@ const KNOWN_BINARY = new Set(['.doc', '.xls', '.ppt', '.pdf', '.zip', '.rar', '.
 const PLACEHOLDER_RE = /\[[^[\]\n]{1,20}\]/g;
 
 function parseArgs(argv) {
-  const out = { from: '', to: '', terms: {}, semantic: false, fill: false, map: '' };
+  const out = { from: '', to: '', terms: {}, semantic: false, fill: false, maps: [], orgFallback: false };
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (key === '--from') out.from = argv[++i];
     else if (key === '--to') out.to = argv[++i];
-    else if (key === '--map') out.map = argv[++i];
+    else if (key === '--map') out.maps.push(argv[++i]);
     else if (key === '--add') {
       // "某某科技=客户,某某医院=医院" → { 某某科技: '客户', 某某医院: '医院' }
       for (const pair of String(argv[++i] ?? '').split(/[,，]/)) {
@@ -49,6 +49,7 @@ function parseArgs(argv) {
         out.terms[value] = label || '自定义词';
       }
     } else if (key === '--semantic') out.semantic = true;
+    else if (key === '--org-fallback') out.orgFallback = true;
     else if (key === '--fill') out.fill = true;
   }
   if (!out.from || !out.to) {
@@ -56,8 +57,8 @@ function parseArgs(argv) {
     console.error('      node tools/redact-dir.mjs --fill --map 映射表.json --from 产出目录 --to 成稿目录');
     process.exit(1);
   }
-  if (out.fill && !out.map) {
-    console.error('回填模式需要 --map 映射表.json');
+  if (out.fill && out.maps.length === 0) {
+    console.error('回填模式需要 --map 映射表.json（可重复传多份）');
     process.exit(1);
   }
   return out;
@@ -81,11 +82,14 @@ async function walk(dir, base = dir, out = []) {
 const args = parseArgs(process.argv.slice(2));
 const files = await walk(resolve(args.from));
 mkdirSync(args.to, { recursive: true });
-
 // ── 回填模式：把产出文档里的占位符换回真值 ─────────────────────────
 if (args.fill) {
-  const map = JSON.parse(await readFile(args.map, 'utf8'));
-  const tokens = map.tokens ?? {};
+  // 合并多份映射表：材料目录和模板目录各自产出一份，回填时要一起用
+  const tokens = {};
+  for (const mapPath of args.maps) {
+    const map = JSON.parse(await readFile(mapPath, 'utf8'));
+    Object.assign(tokens, map.tokens ?? {});
+  }
   let used = 0;
   let leftover = 0;
 
@@ -109,6 +113,20 @@ if (args.fill) {
 // ── 脱敏模式 ───────────────────────────────────────────────────────
 const rules = await loadRules();
 const session = new Session({ maxEntries: 5000 });
+
+// 兜底：词表列不全时，把所有「XX公司 / XX医院 / XX大学 / XX研究院 / XX集团」一律当成机构名。
+// 描述性的「中心」故意不包含——「数据中心」「测试中心」这类会被误伤。
+// 代价是句子可读性下降（某某科技有限公司 → [机构]），换来的是不会漏掉任何企业名。
+if (args.orgFallback) {
+  rules.push({
+    id: 'org-fallback', label: '机构', category: 'identity', tier: 'format',
+    severity: 'medium', token: 'ORG',
+    match: [{
+      type: 'regex',
+      pattern: '[\\u4e00-\\u9fa5A-Za-z0-9]{2,12}(?:股份有限公司|有限责任公司|有限公司|公司|医院|大学|研究院|集团)'
+    }]
+  });
+}
 
 const fileMap = [];
 const skipped = [];
