@@ -112,6 +112,12 @@ if (args.fill) {
 
 // ── 脱敏模式 ───────────────────────────────────────────────────────
 const rules = await loadRules();
+
+// 路径本身也要脱敏：控制台输出会进到模型上下文，直接印原始文件名等于泄漏。
+// 「未处理清单」尤其危险——恰恰是读不了的那些文件，名字最original。
+const redactPath = (text, session) => redact(String(text), {
+  rules, session, enableSemantic: args.semantic, customTerms: args.terms
+}).text;
 const session = new Session({ maxEntries: 5000 });
 
 // 兜底：词表列不全时，把所有「XX公司 / XX医院 / XX大学 / XX研究院 / XX集团」一律当成机构名。
@@ -172,7 +178,9 @@ console.log(`处理 ${processed} 个文件，替换 ${hits} 处`);
 console.log(`脱敏副本：${resolve(args.to)}`);
 console.log(`映射表（含原始信息，只留本地，不要交给模型）：${manifestPath}`);
 if (skipped.length > 0) {
-  console.log(`\n未处理 ${skipped.length} 个：`);
-  for (const item of skipped.slice(0, 12)) console.log(`  ${item.file} —— ${item.reason}`);
+  // 用临时 session 单独脱敏路径，不污染主映射表
+  const pathSession = new Session({ maxEntries: 5000 });
+  console.log(`\n未处理 ${skipped.length} 个（路径已脱敏）：`);
+  for (const item of skipped.slice(0, 12)) console.log(`  ${redactPath(item.file, pathSession)} —— ${item.reason}`);
   if (skipped.length > 12) console.log(`  …还有 ${skipped.length - 12} 个`);
 }
