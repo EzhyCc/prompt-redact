@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // 最小命令行：本地格式脱敏 + 把脱敏副本生成的文档回填成真值成稿。
 // 它不声称覆盖所有隐私信息。
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { redact, scan } from '../src/index.js';
 import { Session } from '../src/session.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const names = ['contact', 'identity', 'credential', 'finance', 'network', 'semantic'];
-const rules = names.flatMap(n => JSON.parse(readFileSync(resolve(root, `rules/zh-CN/${n}.json`), 'utf8')).rules);
+// 自动发现规则文件，加新文件不用改这里
+const ruleFiles = readdirSync(resolve(root, 'rules', 'zh-CN'))
+  .filter(name => name.endsWith('.json') && name !== 'manifest.json')
+  .sort();
+const rules = ruleFiles.flatMap(name => JSON.parse(readFileSync(resolve(root, `rules/zh-CN/${name}`), 'utf8')).rules);
 
 const PLACEHOLDER_RE = /\[[^[\]\n]{1,20}\]/g;
 

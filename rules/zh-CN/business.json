@@ -1,0 +1,101 @@
+{
+  "locale": "zh-CN",
+  "rules": [
+    {
+      "id": "money-quote",
+      "label": "报价总额",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "AMOUNT",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:报价|总价|合同额|合同金额|预算|标底|底价|成交价)[ ]?[:：]?[ ]?[¥￥]?([0-9][0-9,]{1,15}(?:[.][0-9]{1,2})?)",
+          "valueGroup": 1
+        }
+      ],
+      "note": "商务文档里最该保护的一类：底价泄漏不可逆。要求关键词锚定且至少两位数字，避免把「报价需在 3 日内确认」这类文字里的计数当成金额。已知误报：预算 2026 年 会把年份当成金额。"
+    },
+    {
+      "id": "money-unit",
+      "label": "单价",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "UNITPRICE",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:单价|单位价格)[ ]?[:：]?[ ]?[¥￥]?([0-9][0-9,]{0,12}(?:[.][0-9]{1,2})?)",
+          "valueGroup": 1
+        }
+      ],
+      "note": "单价通常比总额更能反推出成本结构，单独列一条以便占位符显示为「单价」而不是「报价总额」。"
+    },
+    {
+      "id": "money-cost",
+      "label": "成本价",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "COST",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:成本价|成本|进价|采购价)[ ]?[:：]?[ ]?[¥￥]?([0-9][0-9,]{0,12}(?:[.][0-9]{1,2})?)",
+          "valueGroup": 1
+        }
+      ],
+      "note": "成本价一旦随标书外发，等于把利润空间交给对手。已知误报：「成本控制」「成本分析」后面紧跟数字时可能命中。"
+    },
+    {
+      "id": "money-rate",
+      "label": "利润率",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "RATE",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:利润率|毛利率|净利率|折扣率|返点率|返点)[ ]?[:：]?[ ]?([0-9]{1,3}(?:[.][0-9]{1,2})?[ ]?[%％])",
+          "valueGroup": 1
+        }
+      ],
+      "note": "只认带百分号的比率，避免把「返点 3 个点」里的 3 当成比率。"
+    },
+    {
+      "id": "bid-number",
+      "label": "项目编号",
+      "category": "identity",
+      "tier": "format",
+      "severity": "medium",
+      "token": "BIDNO",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:项目|招标|投标|标书|采购|合同|订单)(?:编号|编码|号)[ ]?[:：]?[ ]?([A-Za-z0-9][A-Za-z0-9_/-]{2,30})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "编号本身往往能反查到项目和客户，属于准标识符。要求值以字母或数字开头且至少 3 位，避免命中「项目编号待定」这类占位文字。"
+    },
+    {
+      "id": "tax-id",
+      "label": "税号",
+      "category": "identity",
+      "tier": "format",
+      "severity": "high",
+      "token": "TAXID",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:税号|纳税人识别号)[ ]?[:：]?[ ]?([0-9A-Za-z]{15,20})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "税号有时是 15 位老税号、有时是 18 位统一社会信用代码、有时是 20 位，所以不复用 cn-uscc 的校验位判断，改由关键词锚定。故意不把「统一社会信用代码」写进关键词，否则会抢走 cn-uscc 的标签。"
+    }
+  ]
+}

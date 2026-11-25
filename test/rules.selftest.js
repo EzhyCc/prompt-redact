@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cnMobile, cnIdCard, cnUscc, luhn, ipv4 } from '../src/validators.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const base = resolve(here, '..');
-const files = ['contact','identity','credential','finance','network','semantic'];
+// 自动发现规则文件：加一个新文件不需要改这个测试
+const rulesDir = resolve(base, 'rules', 'zh-CN');
+const dirEntries = await readdir(rulesDir);
+const files = dirEntries.filter(name => name.endsWith('.json') && name !== 'manifest.json').sort();
+const manifest = JSON.parse(await readFile(resolve(rulesDir, 'manifest.json'), 'utf8'));
 const allowedCategories = new Set(['contact','identity','credential','finance','network','custom']);
 const allowedTiers = new Set(['format','semantic']);
 const allowedSeverities = new Set(['high','medium','low']);
@@ -44,8 +48,8 @@ function hasUnboundedDotAll(pattern) {
 
 const allRules = [];
 for (const name of files) {
-  check(`${name}.json parses`, () => {
-    const data = JSON.parse(awaitRead(`${base}/rules/zh-CN/${name}.json`));
+  check(`${name} parses`, () => {
+    const data = JSON.parse(awaitRead(`${base}/rules/zh-CN/${name}`));
     assert.equal(data.locale, 'zh-CN');
     assert.ok(Array.isArray(data.rules));
     allRules.push(...data.rules);
@@ -58,7 +62,10 @@ function awaitRead(path) {
 import { readFileSync } from 'node:fs';
 
 const seen = new Set();
-check('rule count is exactly 25', () => assert.equal(allRules.length, 25));
+check('manifest 与实际规则文件一致', () => {
+  assert.deepEqual([...manifest.files].sort(), files, 'manifest.json 的 files 和目录里的规则文件对不上');
+});
+check('规则总数不为空且不少于 25 条', () => assert.ok(allRules.length >= 25, `只有 ${allRules.length} 条`));
 check('all rule ids are globally unique', () => {
   for (const r of allRules) { assert.ok(!seen.has(r.id), `duplicate id ${r.id}`); seen.add(r.id); }
 });

@@ -206,9 +206,13 @@ function showBanner(message) {
 
 async function loadRules() {
   try {
-    const groups = await Promise.all(RULE_FILES.map(name =>
-      fetch(`../rules/zh-CN/${name}.json`, { cache: 'no-store' })
-        .then(res => { if (!res.ok) throw new Error(`${name}.json HTTP ${res.status}`); return res.json(); })
+    // 浏览器读不到目录，靠 manifest.json 列文件；rules.selftest 会校验它和实际文件一致
+    const dir = new URL('../rules/zh-CN/', import.meta.url);
+    const manifest = await fetch(new URL('manifest.json', dir), { cache: 'no-store' })
+      .then(res => { if (!res.ok) throw new Error(`manifest.json HTTP ${res.status}`); return res.json(); });
+    const groups = await Promise.all(manifest.files.map(name =>
+      fetch(new URL(name, dir), { cache: 'no-store' })
+        .then(res => { if (!res.ok) throw new Error(`${name} HTTP ${res.status}`); return res.json(); })
     ));
     for (const group of groups) allRules.push(...group.rules);
     return true;
