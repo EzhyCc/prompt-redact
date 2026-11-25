@@ -126,9 +126,10 @@ for (const [ruleId, cases] of Object.entries(samples)) {
 for (const r of allRules) {
   const sample = samples[r.id];
   if (!sample) continue;
-  check(`${r.id}: two positive and two negative samples`, () => {
-    assert.equal(sample.positive.length, 2);
-    assert.equal(sample.negative.length, 2);
+  check(`${r.id}: at least two positive and two negative samples`, () => {
+    // 单条规则的正负例可以更多，用来锁住已知的边界写法（例如「报价总额：xxx」）
+    assert.ok(sample.positive.length >= 2, `positive 只有 ${sample.positive.length} 条`);
+    assert.ok(sample.negative.length >= 2, `negative 只有 ${sample.negative.length} 条`);
   });
   for (const [i,s] of (sample.positive || []).entries()) {
     check(`${r.id}: positive ${i+1}`, () => assert.equal(assertRuleMatches(r,s), true, `expected hit: ${s}`));
