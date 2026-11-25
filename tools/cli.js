@@ -7,13 +7,13 @@ import { redact, scan } from '../src/index.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const names=['contact','identity','credential','finance','network','semantic'];
 const rules=names.flatMap(n=>JSON.parse(readFileSync(resolve(root,`rules/zh-CN/${n}.json`),'utf8')).rules);
-const help=`open-privacy — 本地格式信息脱敏工具
+const help=`prompt-redact — 本地格式信息脱敏工具
 它只替换规则覆盖到的格式类信息。
 
 用法：
-  open-privacy redact "文本"
-  open-privacy redact -f 文件路径
-  open-privacy scan "文本"
+  prompt-redact redact "文本"
+  prompt-redact redact -f 文件路径
+  prompt-redact scan "文本"
 选项：
   --semantic      启用语义类规则
   --add 张三,李四  追加个人词表（逗号分隔）

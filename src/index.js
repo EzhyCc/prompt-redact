@@ -37,7 +37,7 @@ export function scan(text, rules) {
         }
         const value = match[valueGroup];
         if (typeof value !== 'string' || value.length === 0) continue;
-        // Existing Open Privacy tokens are placeholders, not fresh source values.
+        // Existing Prompt Redact tokens are placeholders, not fresh source values.
         if (/^\[[A-Z]{2,12}_[0-9A-F]{4}\]$/.test(value)) continue;
         if (matcher.validate) {
           const validator = Object.hasOwn(validators, matcher.validate) ? validators[matcher.validate] : null;

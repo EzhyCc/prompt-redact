@@ -1,7 +1,7 @@
 {
-  "name": "open-privacy-core",
+  "name": "prompt-redact",
   "version": "0.0.1",
-  "description": "在数据发给 AI 之前，于本地把敏感信息替换为占位符。",
+  "description": "提示词脱敏：在提示词发给 AI 之前，于本地把敏感信息替换为占位符。开源、零依赖、纯本地处理。",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -9,7 +9,7 @@
   },
   "dependencies": {},
   "bin": {
-    "open-privacy": "tools/cli.js"
+    "prompt-redact": "tools/cli.js"
   },
   "scripts": {
     "test": "node test/selftest.js",
@@ -22,5 +22,33 @@
     "tools",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "keywords": [
+    "提示词脱敏",
+    "prompt-redact",
+    "prompt-redaction",
+    "prompt-privacy",
+    "privacy",
+    "redact",
+    "sanitize",
+    "pii",
+    "mask",
+    "llm",
+    "ai-privacy",
+    "本地脱敏",
+    "敏感信息",
+    "数据脱敏",
+    "隐私保护",
+    "openai",
+    "chatgpt",
+    "deepseek"
+  ],
+  "homepage": "https://github.com/EzhyCc/prompt-redact#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EzhyCc/prompt-redact.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EzhyCc/prompt-redact/issues"
+  }
 }

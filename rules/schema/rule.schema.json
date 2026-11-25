@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://open-privacy.example/schema/rule.schema.json",
-  "title": "Open Privacy Rule",
-  "description": "Rule contract documentation for Open Privacy v0.0.1; documentation only, not loaded at runtime.",
+  "$id": "https://prompt-redact.example/schema/rule.schema.json",
+  "title": "Prompt Redact Rule",
+  "description": "Rule contract documentation for Prompt Redact v0.0.1; documentation only, not loaded at runtime.",
   "type": "object",
   "required": [
     "id",

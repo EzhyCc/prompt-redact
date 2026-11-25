@@ -1,4 +1,4 @@
-/** Pure validators for Open Privacy. Zero runtime dependencies. */
+/** Pure validators for Prompt Redact. Zero runtime dependencies. */
 
 /** @param {unknown} value @returns {boolean} */
 export function luhn(value) {
