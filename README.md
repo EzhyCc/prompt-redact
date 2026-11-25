@@ -37,7 +37,14 @@
 
 ## 快速开始
 
-需要 Node.js 20 或更高版本。**零依赖，不需要 `npm install`。**
+先看你是哪一种：
+
+| 你是谁 | 要装什么 | 怎么开始 |
+|---|---|---|
+| **在 DeepSeek Harness 里用** | **什么都不用装**——Node 由 DSH 自带；docx 处理是纯 JS，不需要 Python、不需要 Office | 把仓库地址粘进「插件 → 添加第三方插件」，然后**重启一次 DSH** |
+| 在命令行 / 脚本里用 | Node.js 20 或更高版本 | 用下面的命令 |
+
+命令行用法：**零依赖，不需要 `npm install`。**
 
 ```bash
 node test/selftest.js                              # 全部自测
@@ -254,6 +261,17 @@ https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.tar.gz
 ```
 
 或者手动放：把仓库克隆到 `~/.dsh/plugins/prompt-redact`，重启 DSH。
+
+### 装完怎么确认它在工作
+
+**不需要装任何东西，也不需要配任何东西。** 但插件是 cordis 插件，**装完要重启一次 DSH**（或在插件页关掉再打开）。
+
+重启后发一条消息，里面放一个假号码，然后看结果：
+
+- 气泡里显示 `[手机号]` → 已经在工作
+- 气泡里还是原号码 → 要么没重启，要么 `redactSessionLog` 没开（默认关，见下）
+
+不想开 `redactSessionLog` 也能验证：让模型复述你发的那句话。它复述出来的是占位符，说明请求被改写过——**你屏幕上是原文，发出去的是占位符**，这正是设计意图。
 
 **它挂在哪**：cordis 的 `llm/stream` 瀑布。DSH 每发一次模型请求都会派发这个事件，插件在这里把 `role: "user"` 的文本块替换后再放行。
 
