@@ -1,0 +1,18 @@
+# prompt-redact 的 DSH 插件配置
+#
+# 这个文件被 DSH 的插件加载器读取，用来把插件 insert 进 cordis 容器。
+# 安装后可以在「插件」页里开关，或直接改下面的 config。
+
+- insert:
+    - id: prompt-redact
+      name: 'prompt-redact'
+      inject: [llm]
+      config:
+        # 总开关。false 时插件完全不介入，请求原样透传。
+        enabled: true
+        # 是否启用语义类规则（如公司名）。默认关闭——开了会把"分析××公司的风险"里的公司名也换掉。
+        enableSemantic: false
+        # 个人词表：人名、客户名、项目代号这类规则抓不住的词，整词匹配。
+        customTerms: []
+        # 会话映射上限，超出整体清空。
+        maxEntries: 500

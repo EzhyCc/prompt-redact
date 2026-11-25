@@ -132,13 +132,39 @@ node tools/serve.js            # 只监听 127.0.0.1:5173
 - **二次扫描是保险丝**，正常路径下不会触发，它防的是"某条规则命中了自己产出的 token"。
 - **覆盖率不等于安全性**。没接入的通道（桌面客户端、移动端）完全不受保护。
 
+## 在 DeepSeek Harness 里用
+
+DSH 的插件页 →「添加插件」→「安装第三方插件」→ 粘这个地址：
+
+```
+https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.tar.gz
+```
+
+或者手动放：把仓库克隆到 `~/.dsh/plugins/prompt-redact`，重启 DSH。
+
+**它挂在哪**：cordis 的 `llm/stream` 瀑布。DSH 每发一次模型请求都会派发这个事件，插件在这里把 `role: "user"` 的文本块替换后再放行。
+
+**配置**（`cordis.patch.yml`，也可以在插件配置界面改）：
+
+| 项 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | 总开关。关掉后完全透传，不改任何字节 |
+| `enableSemantic` | `false` | 语义类规则（公司名）。开了会把"分析××公司的风险"里的公司名也换掉 |
+| `customTerms` | `[]` | 个人词表，整词匹配，填人名、客户名、项目代号 |
+| `maxEntries` | `500` | 会话映射上限 |
+
+**怎么确认它真的生效了**：发一句「我手机 13800138000，帮我记一下」，然后看会话日志或请求体——里面应该是 `[PHONE_xxxx]`，不是原号。
+
+> ⚠️ 只处理 `role: "user"` 的 text 块。system 提示词、已有 assistant 回复、图片和文件引用一律不动。
+> 脱敏过程抛异常时会**放行并把警告写进日志**，不会阻断你的对话——这是取舍，不是承诺。
+
 ## 宿主矩阵
 
 | 宿主 | 形态 | 状态 |
 |---|---|---|
-| DeepSeek Harness | cordis 插件 | 开发中（Step 7） |
+| DeepSeek Harness | cordis 插件 | ✅ v0.0.1 |
 | 浏览器（网页版 AI） | MV3 扩展 | 后续 |
-| 支持自定义 `base_url` 的客户端 | 本地代理 | 后续 |
+| 支持自定义 `base_url` 的客户端 | 本地代理（DSH 可用 `DEEPSEEK_BASE_URL`，协议是 Anthropic Messages） | 后续 |
 | 不透明官方客户端（豆包 / MiMo 等） | 无解，明确不覆盖 | 不做 |
 | 移动端 | PWA 占位 | 后续 |
 

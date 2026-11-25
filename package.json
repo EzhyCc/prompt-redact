@@ -11,6 +11,17 @@
   "bin": {
     "prompt-redact": "tools/cli.js"
   },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "install": {
+      "preferred": "tarball",
+      "tarball": "https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.tar.gz",
+      "zip": "https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.zip",
+      "git": "https://github.com/EzhyCc/prompt-redact.git"
+    }
+  },
   "scripts": {
     "test": "node test/selftest.js",
     "demo": "node demo.js",
@@ -21,6 +32,8 @@
     "src",
     "rules",
     "tools",
+    "lib",
+    "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
