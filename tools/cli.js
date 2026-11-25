@@ -26,7 +26,7 @@ const mode=args.shift();
 if(!['redact','scan'].includes(mode)){console.error(help);process.exit(1);}
 let input=args.find(a=>!a.startsWith('-'));
 const fileIndex=args.indexOf('-f');
-if(fileIndex>=0){const file=args[fileIndex+1];if(!file){console.error('缺少文件路径');process.exit(1);}try{input=readFileSync(file,'utf8');}catch(e){console.error('读取失败:',e.message);process.exit(1);}}
+if(fileIndex>=0){const file=args[fileIndex+1];if(!file){console.error('缺少文件路径');process.exit(1);}try{input=readFileSync(file,'utf8').replace(/^\uFEFF/,'');}catch(e){console.error('读取失败:',e.message);process.exit(1);}}
 if(typeof input!=='string'){console.error('缺少文本参数或 -f 文件路径');process.exit(1);}
 const semantic=args.includes('--semantic');
 const addIndex=args.indexOf('--add');
