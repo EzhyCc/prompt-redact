@@ -37,6 +37,10 @@ export function scan(text, rules) {
         }
         const value = match[valueGroup];
         if (typeof value !== 'string' || value.length === 0) continue;
+        // 已经是占位符的值不再处理：`密码：xxx` 这种关键词锚定规则会把冒号后面的
+        // 任何内容当成值，包括上一轮自己产出的 `[手机号]`、`[PASSWORD_DB67]`。
+        // 不挡的话，对已脱敏文本再跑一次会把它替换成规则自己的标签，映射就断了。
+        if (/^\[[^[\]\n]{1,20}\]$/.test(value)) continue;
         if (matcher.validate) {
           const validator = Object.hasOwn(validators, matcher.validate) ? validators[matcher.validate] : null;
           if (typeof validator !== 'function' || !validator(value)) continue;

@@ -152,6 +152,26 @@ check('customTerms 与 IP 占位符同名时不产生假阻断', () => {
   assert.equal(result.blocked, false);
   assert.equal(result.residuals.length, 0);
 });
+// 关键词锚定 + valueGroup 的规则（密码：xxx / 税号：xxx）会把冒号后面的任何内容当值，
+// 包括上一轮自己产出的占位符。不挡住的话，对已脱敏文本再跑一次会把占位符换成规则标签，
+// 映射当场就断了——这个 bug 修过两次，两次都是换占位符格式之后复发的。
+check('已经脱敏的文本再跑一次一字不改', () => {
+  const once = safeRedact('密码：Qwe!2345，电话 13800138000，税号：91310000MA1FL0Q157', { session: new Session() });
+  const twice = safeRedact(once.text, { session: new Session() });
+  assert.equal(twice.text, once.text);
+  assert.equal(twice.stats.total, 0);
+});
+check('旧格式随机码占位符不会被二次脱敏', () => {
+  const text = '密码：[PASSWORD_DB67]，电话 [PHONE_7913]，卡号 [CARD_BEBB]';
+  const result = safeRedact(text, { session: new Session() });
+  assert.equal(result.text, text);
+  assert.equal(result.stats.total, 0);
+});
+check('数字开头但不是占位符的值仍会被处理', () => {
+  const result = safeRedact('密码：12345678', { session: new Session() });
+  assert.equal(result.text, '密码：[口令]');
+});
+
 check('5000-character text is processed in under 20ms', () => {
   const longText = '普通文本'.repeat(1250);
   assert.equal(longText.length, 5000);
