@@ -99,7 +99,18 @@ node tools/docx.mjs compose \
 
 **实现要点**：段落级匹配、run 级落笔。Word 会把一句话拆进多个 run（`某大学` + `某医院`），只按 run 替换跨不过边界；所以按段落拼起来脱敏，改动后写进第一个 run。段落样式、自动编号、页眉页脚、表格全保留；代价是同段落内的混排格式会被合并。
 
-**需要 `python-docx`**（`pip install python-docx`），其它命令仍是零依赖。用 `PROMPT_REDACT_PYTHON` 指定解释器。
+**零依赖，不需要 Python、不需要 Office。** docx 的读写是自己实现的：ZIP 读写 + 一个只管 Office 文档的 XML 扫描器（按标签栈定位元素，能正确处理文本框里的嵌套段落）。
+
+### 装完插件就能处理 Word
+
+插件会把两个工具注册给模型，用户直接说「把 D:\合同.docx 脱敏」就行：
+
+| 工具 | 作用 |
+|---|---|
+| `redact_docx` | 就地脱敏一份 Word，产出 `<原名>-脱敏.docx` 和 `<原名>.map.json` |
+| `compose_docx` | 在脱敏模板上重建各章正文，产出成品 |
+
+宿主没有 tools 能力、或 `@deepseek-ai/dsh-tools` 不可用时自动跳过，不影响聊天脱敏。
 
 ### 目录脱敏：把一整个资料夹交给 AI
 

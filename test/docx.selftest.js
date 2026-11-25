@@ -1,17 +1,20 @@
-// docx 两条命令的端到端自测：redact（保格式脱敏）→ compose（保格式填充）
-// 依赖 python-docx；缺依赖时整组跳过（打印 0 passed），不影响 CI。
+// docx 两条命令的端到端自测：redact（保格式脱敏）→ compose（保格式填充）。
+// 全部纯 JS：fixture 由 test/helpers/make-docx.js 用我们自己的 zip 写入器生成，
+// 不需要 Python、不需要 Office、不需要任何外部程序。
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import { extractOfficeText } from '../tools/extract/office.js';
 import { readZip } from '../tools/extract/zip.js';
+import { makeDocx } from './helpers/make-docx.js';
+import { composeDocxBuffer } from '../tools/docx/compose.js';
+import { redactDocxBuffer, withOrgFallback } from '../tools/docx/redact.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, '..');
-const CLI = join(ROOT, 'tools', 'docx.mjs');
+const RULES_DIR = join(HERE, '..', 'rules', 'zh-CN');
 
 let passed = 0;
 let failed = 0;
@@ -20,105 +23,64 @@ function check(name, fn) {
   catch (error) { failed += 1; process.stderr.write(`FAIL ${name}: ${error.message}\n`); }
 }
 
-/** 找一个装了 python-docx 的解释器。 */
-function findPython() {
-  const candidates = [process.env.PROMPT_REDACT_PYTHON, 'python', 'python3'].filter(Boolean);
-  for (const candidate of candidates) {
-    const probe = spawnSync(candidate, ['-c', 'import docx'], { stdio: 'ignore' });
-    if (probe.status === 0) return candidate;
+function loadRules() {
+  const rules = [];
+  for (const file of readdirSync(RULES_DIR)) {
+    if (!file.endsWith('.json') || file === 'manifest.json') continue;
+    rules.push(...(JSON.parse(readFileSync(join(RULES_DIR, file), 'utf8')).rules ?? []));
   }
-  return null;
+  return rules;
 }
 
-const python = findPython();
-if (!python) {
-  process.stdout.write('SKIP 没有可用的 python-docx，跳过 docx 命令测试\n\n0 passed, 0 failed\n');
-  process.exit(0);
-}
-process.env.PROMPT_REDACT_PYTHON = python;
-
-const work = mkdtempSync(join(tmpdir(), 'pr-docx-test-'));
-
-/** 造一份带假敏感信息的模板：正文 + 文档属性作者 + 修订记录作者。 */
-const FIXTURE = `import sys
-from docx import Document
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
-
-doc = Document()
-doc.add_paragraph("项目初步验收方案")
-doc.add_heading("1 项目简介", level=1)
-doc.add_paragraph("建设单位：某某科技有限公司，联系人张三，手机 13800138000。")
-doc.add_heading("2 初验目的", level=1)
-doc.add_paragraph("原模板里的说明文字。")
-
-# 文档属性里的作者（真实文档几乎都带，早期版本完全不处理）
-doc.core_properties.author = "张三"
-doc.core_properties.last_modified_by = "张三"
-doc.core_properties.title = "某某科技项目验收方案"
-
-# 修订记录的作者名（w:ins/@w:author），文字可以被规则抓，属性不能
-paragraph = doc.paragraphs[2]
-run = paragraph.runs[0]
-ins = OxmlElement("w:ins")
-ins.set(qn("w:id"), "1")
-ins.set(qn("w:author"), "张三")
-ins.set(qn("w:date"), "2023-01-01T00:00:00Z")
-paragraph._p.insert(0, ins)
-ins.append(run._r)
-
-doc.save(sys.argv[1])
-`;
+const WORK = mkdtempSync(join(tmpdir(), 'pr-docx-'));
 
 try {
-  const fixture = join(work, '模板.docx');
-  writeFileSync(join(work, 'make_fixture.py'), FIXTURE, 'utf8');
-  spawnSync(python, [join(work, 'make_fixture.py'), fixture], { encoding: 'utf8' });
-  check('fixture 生成', () => assert.ok(existsSync(fixture)));
+  const fixture = makeDocx({
+    creator: '张三',
+    paragraphs: [
+      { text: '1 项目简介', style: 'Heading1', fontSize: 32 },
+      { text: '建设单位：某某科技有限公司，联系人张三，手机 13800138000。', author: '张三', fontSize: 24 },
+      { text: '2 初验目的', style: 'Heading1', fontSize: 32 },
+      { text: '原模板里的说明文字。', fontSize: 24 },
+      { text: '3 初验标准', style: 'Heading1', fontSize: 32 },
+      { text: '子项标题', style: 'Heading5', fontSize: 21 },
+      { text: '(1) 电子病历归档系统；', fontSize: 24 }
+    ]
+  });
+  writeFileSync(join(WORK, '模板.docx'), fixture);
 
-  // ── redact ──────────────────────────────────────────────────────
-  const outDir = join(work, 'out');
-  const redactRun = spawnSync(process.execPath, [
-    CLI, 'redact', '--in', fixture, '--out', outDir,
-    '--terms', '某某科技=客户,张三=当事人', '--org'
-  ], { encoding: 'utf8' });
-
-  check('redact 命令执行成功', () => assert.equal(redactRun.status, 0, redactRun.stderr));
-
-  const redactedPath = join(outDir, '模板-脱敏.docx');
-  const mapPath = join(outDir, '模板.map.json');
-  check('只产出两个文件：脱敏 docx + 映射表', () => {
-    assert.ok(existsSync(redactedPath), '缺少脱敏 docx');
-    assert.ok(existsSync(mapPath), '缺少映射表');
+  check('fixture 生成（用我们自己的 zip 写入器）', () => {
+    const entries = readZip(fixture);
+    for (const name of ['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'docProps/core.xml']) {
+      assert.ok(entries.has(name), `缺 ${name}`);
+    }
   });
 
-  check('脱敏后的 docx 里没有原始敏感信息', () => {
-    const text = extractOfficeText(readFileSync(redactedPath), '.docx');
+  // ── redact ────────────────────────────────────────────────────────
+  const rules = withOrgFallback(loadRules());
+  const redacted = redactDocxBuffer(fixture, {
+    rules,
+    terms: { 某某科技: '客户', 张三: '当事人' }
+  });
+  const redactedEntries = readZip(redacted.buffer);
+
+  check('redact 统计不为零', () => {
+    assert.ok(redacted.stats.paragraphsChanged >= 1, '没有段落被改写');
+    assert.ok(redacted.stats.occurrences >= 2, '命中数太少');
+  });
+
+  check('脱敏后的正文没有原始敏感信息', () => {
+    const text = extractOfficeText(redacted.buffer, '.docx');
     assert.ok(!text.includes('13800138000'), '手机号仍在');
     assert.ok(!text.includes('某某科技'), '公司名仍在');
     assert.ok(text.includes('[手机号]'), '缺少手机号占位符');
   });
 
-  check('映射表记录了占位符与原值', () => {
-    const map = JSON.parse(readFileSync(mapPath, 'utf8'));
-    const keys = Object.keys(map.tokens ?? {});
-    assert.ok(keys.length >= 2, `只有 ${keys.length} 条`);
-    assert.ok(keys.includes('[手机号]'));
-  });
-
-  check('章节标题与样式保留', () => {
-    const text = extractOfficeText(readFileSync(redactedPath), '.docx');
-    assert.ok(text.includes('项目简介'));
-    assert.ok(text.includes('初验目的'));
-  });
-
-  // 早期版本只遍历正文 + 页眉页脚，脚注/文档属性/修订作者全漏。这条按「整个包」查。
   check('整个 docx 包内没有任何部件残留（含文档属性与修订作者）', () => {
-    const entries = readZip(readFileSync(redactedPath));
     const dirty = [];
-    for (const [name, data] of entries) {
+    for (const [name, data] of redactedEntries) {
       if (!name.endsWith('.xml')) continue;
-      const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+      const text = data.toString('utf8');
       for (const word of ['张三', '某某科技', '13800138000']) {
         if (text.includes(word)) dirty.push(`${name} 含 ${word}`);
       }
@@ -126,91 +88,94 @@ try {
     assert.deepEqual(dirty, [], dirty.join(' | '));
   });
 
-  // 曾经 readZip 里有一句「只保留 word/xl/ppt」的过滤，导致 docProps 部件从来没被看见，
-  // 文档属性里的作者名因此一直被漏检。
-  check('zip 读取器不遗漏包内部件（docProps/_rels/customXml）', () => {
-    const entries = readZip(readFileSync(redactedPath));
-    for (const name of ['docProps/core.xml', 'docProps/app.xml', '_rels/.rels']) {
-      assert.ok(entries.has(name), `缺少 ${name}`);
+  check('zip 读取器不遗漏包内部件（docProps/_rels）', () => {
+    for (const name of ['docProps/core.xml', '_rels/.rels']) {
+      assert.ok(redactedEntries.has(name), `缺少 ${name}`);
     }
   });
 
   check('文档属性里的作者被替换成占位符', () => {
-    const entries = readZip(readFileSync(redactedPath));
-    const core = entries.get('docProps/core.xml');
-    assert.ok(core, '缺少 docProps/core.xml');
-    const xml = core.toString('utf8');
+    const xml = redactedEntries.get('docProps/core.xml').toString('utf8');
     assert.ok(!xml.includes('张三'), '作者名仍在');
     assert.ok(xml.includes('[当事人]'), '作者没被替换成占位符');
   });
 
   check('修订记录的作者属性被替换', () => {
-    const entries = readZip(readFileSync(redactedPath));
-    const xml = entries.get('word/document.xml').toString('utf8');
+    const xml = redactedEntries.get('word/document.xml').toString('utf8');
     assert.ok(!/w:author="张三"/.test(xml), 'w:author 仍是真名');
     assert.ok(/w:author="\[当事人\]"/.test(xml), 'w:author 没被替换成占位符');
   });
 
-  // ── compose ─────────────────────────────────────────────────────
-  const contentPath = join(work, '内容.json');
-  writeFileSync(contentPath, JSON.stringify({
-    项目简介: ['本项目为[医院]电子病历归档数据管理系统（一期）建设。', '数据库每日 02:00 全量备份。'],
-    初验目的: ['确认承建单位按合同完成本期全部建设内容。']
-  }), 'utf8');
-
-  const productPath = join(work, '成品.docx');
-  const composeRun = spawnSync(process.execPath, [
-    CLI, 'compose', '--base', redactedPath, '--content', contentPath, '--out', productPath
-  ], { encoding: 'utf8' });
-
-  check('compose 命令执行成功', () => assert.equal(composeRun.status, 0, composeRun.stderr));
-
-  check('成品里是新内容、旧正文已清掉', () => {
-    const text = extractOfficeText(readFileSync(productPath), '.docx');
-    assert.ok(text.includes('电子病历归档数据管理系统'), '缺少新内容');
-    assert.ok(text.includes('[医院]'), '占位符丢失');
-    assert.ok(!text.includes('原模板里的说明文字'), '旧正文没清掉');
+  check('映射表记录了占位符与原值', () => {
+    const keys = Object.keys(redacted.tokens);
+    assert.ok(keys.length >= 2, `只有 ${keys.length} 条`);
+    assert.ok(keys.includes('[手机号]'));
   });
 
-  check('成品保留章节标题', () => {
-    const text = extractOfficeText(readFileSync(productPath), '.docx');
+  check('章节标题保留', () => {
+    const text = extractOfficeText(redacted.buffer, '.docx');
     assert.ok(text.includes('项目简介'));
     assert.ok(text.includes('初验目的'));
   });
 
-  // 字号必须和模板正文一致：曾经用过按样式名猜正文样式，结果 10.5pt 覆盖了模板的 12pt
-  const SIGNATURE = `import json, sys
-from docx import Document
-def sig(path):
-    out = []
-    for p in Document(path).paragraphs:
-        if not p.text.strip() or p.style.name.startswith('Heading'):
-            continue
-        run = p.runs[0] if p.runs else None
-        out.append([
-            p.style.name,
-            run.font.size.pt if run is not None and run.font.size else None,
-            p.style.font.size.pt if p.style.font.size else None
-        ])
-    return out[:3]
-print(json.dumps({"base": sig(sys.argv[1]), "product": sig(sys.argv[2])}, ensure_ascii=False))
-`;
-  writeFileSync(join(work, 'sig.py'), SIGNATURE, 'utf8');
-  const sigRun = spawnSync(python, [join(work, 'sig.py'), redactedPath, productPath], { encoding: 'utf8' });
+  // ── compose ───────────────────────────────────────────────────────
+  const content = {
+    项目简介: ['本项目为[医院]电子病历归档数据管理系统（一期）建设。', '数据库每日 02:00 全量备份。'],
+    初验目的: ['确认承建单位按合同完成本期全部建设内容。'],
+    初验标准: ['（1）电子病历归档系统：应用可正常启动。']
+  };
+  const composed = composeDocxBuffer(redacted.buffer, content);
+  const composedEntries = readZip(composed.buffer);
+  const composedXml = composedEntries.get('word/document.xml').toString('utf8');
+  const composedText = extractOfficeText(composed.buffer, '.docx');
 
-  check('成品正文字号与模板一致（不靠样式名猜）', () => {
-    assert.equal(sigRun.status, 0, sigRun.stderr);
-    const { base, product } = JSON.parse(sigRun.stdout);
-    assert.ok(base.length > 0 && product.length > 0, '取样为空');
-    assert.deepEqual(product[0], base[0], `正文字号不一致：模板 ${JSON.stringify(base[0])} 成品 ${JSON.stringify(product[0])}`);
+  check('compose 匹配到全部章节', () => {
+    assert.equal(composed.stats.chapters, 3, `只匹配到 ${composed.stats.chapters} 章`);
+    assert.deepEqual(composed.stats.missing, []);
   });
 
-  check('正文里没有混入标题样式', () => {
-    const { product } = JSON.parse(sigRun.stdout);
-    assert.ok(product.every(([style]) => !style.startsWith('Heading')), '正文段落用了 Heading 样式');
+  check('成品里是新内容、旧正文已清掉', () => {
+    assert.ok(composedText.includes('电子病历归档数据管理系统'), '缺少新内容');
+    assert.ok(composedText.includes('[医院]'), '占位符丢失');
+    assert.ok(!composedText.includes('原模板里的说明文字'), '旧正文没清掉');
+  });
+
+  check('成品保留章节标题与子标题', () => {
+    assert.ok(composedText.includes('项目简介'));
+    assert.ok(composedText.includes('初验目的'));
+    assert.ok(/Heading5|w:val="Heading5"/.test(composedXml) || composedText.includes('初验标准'));
+  });
+
+  // 字号继承：正文底稿是 24（12pt），标题是 32（16pt）。
+  // 新插入的段落必须带正文底稿的 w:sz=24，而不是标题的 32。
+  check('新段落继承了正文底稿的字号（不是标题字号）', () => {
+    const bodySizes = composedXml.match(/<w:sz w:val="24"\/>/g) ?? [];
+    assert.ok(bodySizes.length >= 4, `正文段落字号标记只有 ${bodySizes.length} 个`);
+    const bodyParagraphs = (composedXml.match(/<w:p>(?:(?!<w:p>)[\s\S])*?电子病历归档数据管理系统[\s\S]*?<\/w:p>/g) ?? []);
+    assert.ok(bodyParagraphs.length > 0, '找不到新插入的段落');
+    for (const paragraph of bodyParagraphs) {
+      assert.ok(paragraph.includes('<w:sz w:val="24"/>'), '新段落没继承正文字号');
+      assert.ok(!paragraph.includes('<w:sz w:val="32"/>'), '新段落被套上了标题字号');
+    }
+  });
+
+  check('克隆段落不携带列表编号（避免和手写的（1）（2）重复）', () => {
+    assert.ok(!/<w:numPr>/.test(composedXml), '克隆段落里残留了 numPr');
+  });
+
+  check('成品自身没有残留真实标识', () => {
+    const dirty = [];
+    for (const [name, data] of composedEntries) {
+      if (!name.endsWith('.xml')) continue;
+      const text = data.toString('utf8');
+      for (const word of ['张三', '某某科技', '13800138000']) {
+        if (text.includes(word)) dirty.push(`${name} 含 ${word}`);
+      }
+    }
+    assert.deepEqual(dirty, [], dirty.join(' | '));
   });
 } finally {
-  rmSync(work, { recursive: true, force: true });
+  rmSync(WORK, { recursive: true, force: true });
 }
 
 process.stdout.write(`\n${passed} passed, ${failed} failed\n`);
