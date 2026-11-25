@@ -195,6 +195,34 @@ check('组件渲染：预览区保留原文并加高亮', () => {
   assert.ok(collectText(tree).join('').includes('13800138000'), '预览区应当保留原文');
 });
 
+check('命中表「命中内容」列显示的是原文，不是空', () => {
+  const tree = registered[1].component({});
+
+  let tbody = null;
+  const walk = node => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (node.type === 'tbody') tbody = node;
+    walk(node.children ?? []);
+  };
+  walk(tree);
+  assert.ok(tbody, '没找到命中表');
+
+  const rows = [];
+  const collectRows = node => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(collectRows); return; }
+    if (node.type === 'tr') rows.push(node);
+    collectRows(node.children ?? []);
+  };
+  collectRows(tbody);
+  assert.ok(rows.length >= 3, `命中表只有 ${rows.length} 行`);
+
+  const firstCells = rows.map(row => collectText(row).join(' '));
+  assert.ok(firstCells[0].includes('13800138000'), `第一行「命中内容」是空的：${firstCells[0]}`);
+  assert.ok(firstCells[0].includes('cn-mobile'), '第一行缺少规则 id');
+});
+
 check('高亮分段覆盖全文、不丢字', () => {
   const { exports } = loadClient({});
   const { redact, Session, RULES, buildSegments } = exports.__internals;
