@@ -111,16 +111,38 @@ const ctx = {
   }
 };
 
-check('apply 注册到 settings.section', () => {
+check('apply 注册侧栏入口 sidebar.panellist', () => {
   const { exports } = loadClient({});
   exports.apply(ctx);
-  assert.deepEqual([...injected], ['settings.section']);
-  assert.equal(registered.length, 1);
-  assert.equal(registered[0].meta.name, 'settings.section');
-  assert.equal(registered[0].meta.id, 'prompt-redact');
-  assert.ok(registered[0].meta.order > 0);
-  assert.equal(registered[0].meta.label(), '提示词脱敏');
-  assert.equal(typeof registered[0].component, 'function');
+  assert.deepEqual([...injected], ['sidebar.panellist', 'main'], `注入的 slot 不对：${JSON.stringify([...injected])}`);
+  assert.equal(registered.length, 2);
+
+  const entry = registered[0].meta;
+  assert.equal(entry.name, 'sidebar.panellist');
+  assert.equal(entry.id, 'prompt-redact');
+  assert.equal(entry.label, '提示词脱敏', 'label 必须是普通字符串');
+  assert.equal(typeof entry.label, 'string');
+  assert.ok(entry.order > 0);
+  assert.equal(typeof registered[0].component, 'function', '侧栏入口需要图标组件');
+
+  const page = registered[1].meta;
+  assert.equal(page.name, 'main');
+  assert.equal(page.key, 'prompt-redact', 'main 的 key 要和侧栏 id 对应');
+});
+
+check('图标组件能渲染出 svg', () => {
+  const icon = registered[0].component({});
+  assert.equal(icon.type, 'svg');
+
+  const types = [];
+  const walk = node => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    types.push(node.type);
+    walk(node.children ?? []);
+  };
+  walk(icon);
+  assert.ok(types.filter(type => type === 'path').length >= 2, '图标内容不完整');
 });
 
 check('宿主没有 slots 时不抛错', () => {
@@ -150,7 +172,7 @@ function findOutputPre(node) {
 }
 
 check('组件渲染：输出区是占位符，不是原文', () => {
-  const tree = registered[0].component({});
+  const tree = registered[1].component({});
   const pre = findOutputPre(tree);
   assert.ok(pre, '没找到输出区');
   const output = collectText(pre).join('');
@@ -160,7 +182,7 @@ check('组件渲染：输出区是占位符，不是原文', () => {
 });
 
 check('组件渲染：预览区保留原文并加高亮', () => {
-  const tree = registered[0].component({});
+  const tree = registered[1].component({});
   const marks = [];
   const walk = node => {
     if (!node || typeof node !== 'object') return;
