@@ -75,57 +75,53 @@ def collect_units(document):
       paragraphs  段落级：整段拼串再脱敏，写回第一个 w:t
       nodes       散文本节点：元素自身的 .text（如 docProps 里的作者）
       attrs       属性：修订作者、批注作者
+
+    注意：不要用 id(element) 去重或判断祖先——lxml 每次遍历返回的是新的代理对象，
+    id 不稳定，判断会时灵时不灵。一律按标签判断。
     """
     paragraphs, nodes, attrs = [], [], []
-    seen_para, seen_node, seen_attr = set(), set(), set()
 
     for part in document.part.package.parts:
         element = getattr(part, "_element", None)
         if element is None or not wanted(part):
             continue
 
-        # 段落级：凡是 w:p 内部的文字都按段处理，能跨 run 匹配
-        for paragraph in element.iter(f"{W}p"):
-            if id(paragraph) in seen_para:
-                continue
-            seen_para.add(id(paragraph))
-            paragraphs.append(paragraph)
+        # 1) 段落级：w:p 内部的文字整段拼起来脱敏，能跨 run 匹配
+        paragraphs.extend(element.iter(f"{W}p"))
 
-        # 散落文本节点：不在任何 w:p 里的（docProps 等）
-        paragraph_ids = {id(p) for p in element.iter(f"{W}p")}
+        # 2) 散落文本：只取叶子节点，且祖先里没有 w:p / w:t
         for node in element.iter():
             if not isinstance(node.tag, str):
                 continue
-            if node.tag == f"{W}t":
+            if node.tag in (f"{W}p", f"{W}t"):
                 continue
+            if len(node) != 0:
+                continue  # 有子元素的不是文本叶子
             if not node.text or not node.text.strip():
                 continue
-            # 祖先里有 w:p 的已经在段落里处理过
-            parent = node.getparent()
-            inside_paragraph = False
-            while parent is not None:
-                if id(parent) in paragraph_ids:
-                    inside_paragraph = True
-                    break
-                parent = parent.getparent()
-            if inside_paragraph:
-                continue
-            if id(node) in seen_node:
-                continue
-            seen_node.add(id(node))
+            if has_paragraph_ancestor(node):
+                continue  # 已由段落级处理
             nodes.append(node)
 
-        # 属性里的作者名
+        # 3) 属性里的作者名
         for node in element.iter():
             if not isinstance(node.tag, str):
                 continue
             for attr in AUTHOR_ATTRS:
                 value = node.get(attr)
-                if value and (id(node), attr) not in seen_attr:
-                    seen_attr.add((id(node), attr))
+                if value:
                     attrs.append((node, attr))
 
     return paragraphs, nodes, attrs
+
+
+def has_paragraph_ancestor(node):
+    parent = node.getparent()
+    while parent is not None:
+        if parent.tag == f"{W}p":
+            return True
+        parent = parent.getparent()
+    return False
 
 
 def paragraph_text(paragraph):
