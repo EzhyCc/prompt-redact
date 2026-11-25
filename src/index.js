@@ -1,5 +1,5 @@
 import { validators } from './validators.js';
-import { randomToken } from './session.js';
+import { Session } from './session.js';
 import { SEVERITY_WEIGHT } from './constants.js';
 
 /**
@@ -37,8 +37,6 @@ export function scan(text, rules) {
         }
         const value = match[valueGroup];
         if (typeof value !== 'string' || value.length === 0) continue;
-        // Existing Prompt Redact tokens are placeholders, not fresh source values.
-        if (/^\[[A-Z]{2,12}_[0-9A-F]{4}\]$/.test(value)) continue;
         if (matcher.validate) {
           const validator = Object.hasOwn(validators, matcher.validate) ? validators[matcher.validate] : null;
           if (typeof validator !== 'function' || !validator(value)) continue;
@@ -118,15 +116,18 @@ export function redact(text, opts = {}) {
   }
 
   const candidates = resolveConflicts(scan(text, activeRules));
+  // 没有传入会话时自己建一个临时的：同一次调用内同一个值仍然共用一个占位符。
+  const runSession = opts.session ?? new Session({ maxEntries: opts.maxEntries ?? 500 });
+
   let cursor = 0;
   let output = '';
   const safeHits = [];
+  const tokenSpans = [];
   const byCategory = {};
   for (const hit of candidates) {
     output += text.slice(cursor, hit.start);
-    const token = opts.session
-      ? opts.session.tokenFor(hit.token, hit.value)
-      : randomToken(hit.token);
+    const token = runSession.tokenFor(hit.label || hit.token, hit.value);
+    tokenSpans.push([output.length, output.length + token.length]);
     output += token;
     cursor = hit.end;
     safeHits.push({
@@ -137,13 +138,9 @@ export function redact(text, opts = {}) {
   }
   output += text.slice(cursor);
 
-  // 二次扫描是保险丝：正常路径下不该触发，它防的是「某条规则命中了自己产出的 token」。
-  // 做法不是把 token 遮蔽成 #（那样 密码：xxx 这类关键词锚定规则会改吃 ###### 而误报），
-  // 而是先记下 token 区间，扫完之后丢弃落在 token 内部的命中。
-  const tokenSpans = [];
-  for (const found of output.matchAll(/\[[A-Z]{2,12}_[0-9A-F]{4}\]/g)) {
-    tokenSpans.push([found.index, found.index + found[0].length]);
-  }
+  // 二次扫描是保险丝：正常路径下不该触发，它防的是「某条规则命中了自己产出的占位符」。
+  // 做法不是把占位符遮蔽成 #（那样 密码：xxx 这类关键词锚定规则会改吃 ###### 而误报），
+  // 而是把刚才记下的区间过滤掉——占位符的坐标在拼装时就已知，不需要再用正则去找。
   const residuals = scan(output, activeRules)
     .filter(hit => hit.severity === 'high')
     .filter(hit => !tokenSpans.some(([start, end]) => hit.start < end && hit.end > start))

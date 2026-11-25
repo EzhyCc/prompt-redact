@@ -10,11 +10,15 @@ export const CATEGORIES = Object.freeze(['contact', 'identity', 'credential', 'f
 /** @type {ReadonlyArray<'format' | 'semantic'>} */
 export const TIERS = Object.freeze(['format', 'semantic']);
 
-/** @type {RegExp} */
-export const TOKEN_RE = /\[([A-Z]{2,12})_([0-9A-F]{4})\]/;
+/**
+ * 占位符外形：方括号 + 1–20 个不含方括号和换行的字符，例如 `[手机号]`、`[报价总额_2]`。
+ * 不带 g 标志，避免 lastIndex 状态污染；需要全局遍历时用 new RegExp(PLACEHOLDER_SOURCE, 'g')。
+ * @type {RegExp}
+ */
+export const PLACEHOLDER_RE = /\[[^[\]\n]{1,20}\]/;
 
-/** @type {number} */
-export const MAX_TOKEN_COLLISION_RETRY = 16;
+/** @type {string} */
+export const PLACEHOLDER_SOURCE = PLACEHOLDER_RE.source;
 
 /** @type {number} */
 export const DEFAULT_MAX_ENTRIES = 500;

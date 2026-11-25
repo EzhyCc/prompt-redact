@@ -11,7 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const names = ['contact', 'identity', 'credential', 'finance', 'network', 'semantic'];
 const rules = names.flatMap(n => JSON.parse(readFileSync(resolve(root, `rules/zh-CN/${n}.json`), 'utf8')).rules);
 
-const TOKEN_RE = /\[[A-Z]{2,12}_[0-9A-F]{4}\]/g;
+const PLACEHOLDER_RE = /\[[^[\]\n]{1,20}\]/g;
 
 const help = `prompt-redact — 本地格式信息脱敏工具
 它只替换规则覆盖到的格式类信息。
@@ -30,7 +30,7 @@ const help = `prompt-redact — 本地格式信息脱敏工具
   --quiet           只输出结果，不输出统计
   --help            显示帮助
 
-fill 是本地回填：把 AI 基于脱敏副本写出的文档里的 [TYPE_XXXX] 换回真值。
+fill 是本地回填：把 AI 基于脱敏副本写出的文档里的 [手机号] 这类占位符换回真值。
 映射文件只在你自己的磁盘上，回填过程不经过网络。`;
 
 const args = process.argv.slice(2);
@@ -71,25 +71,32 @@ if (mode === 'fill') {
     process.exit(1);
   }
 
-  const missing = new Set();
-  const filled = template.replace(TOKEN_RE, token => {
-    if (Object.hasOwn(map, token)) return map[token];
-    missing.add(token);
-    return token;
-  });
+  // 只替换映射里确实存在的占位符：文档里本来的方括号（脚注、Markdown 链接）不会被误伤
+  let filled = template;
+  let used = 0;
+  const unused = [];
+  for (const [placeholder, value] of Object.entries(map)) {
+    if (filled.includes(placeholder)) {
+      filled = filled.split(placeholder).join(value);
+      used += 1;
+    } else {
+      unused.push(placeholder);
+    }
+  }
 
   const outPath = readArg('-o');
   if (outPath) writeFileSync(outPath, filled, 'utf8');
   else console.log(filled);
 
+  // 回填后仍然存在的方括号内容：可能是映射里没有的，也可能只是正文里的方括号
+  const leftover = [...new Set(filled.match(PLACEHOLDER_RE) ?? [])];
+
   if (!args.includes('--quiet')) {
-    const total = (template.match(TOKEN_RE) || []).length;
-    console.error(`回填 ${total - missing.size}/${total} 个占位符`);
-    if (missing.size > 0) {
-      console.error(`以下占位符在映射里找不到，已原样保留：${[...missing].join(', ')}`);
-    }
+    console.error(`回填 ${used}/${Object.keys(map).length} 条映射`);
+    if (unused.length > 0) console.error(`映射里这些占位符没在文档中出现：${unused.join(', ')}`);
+    if (leftover.length > 0) console.error(`文档里仍有方括号内容，请确认是否漏填：${leftover.join(' ')}`);
   }
-  process.exit(missing.size > 0 ? 3 : 0);
+  process.exit(leftover.length > 0 ? 3 : 0);
 }
 
 // ---- redact / scan ----

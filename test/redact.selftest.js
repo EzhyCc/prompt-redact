@@ -30,16 +30,19 @@ Key: sk-proj-AbCdEf1234567890XyZq
 const mainResult = safeRedact(mainInput);
 check('§10.1 main sample: all required values are replaced', () => {
   const required = [
-    ['PHONE', '138-0013-8000'], ['IDCARD', '110101199003071233'],
-    ['6222021234567894', '6222021234567894'], ['EMPID', 'A1027'],
-    ['EMAIL', 'zhang.san@yunshen-tech.com.cn'], ['IP', '10.12.33.44'],
-    ['DBURI', 'mysql://root:Pa55w0rd@10.12.33.9:3306/prod'],
-    ['APIKEY', 'sk-proj-AbCdEf1234567890XyZq'], ['PASSWORD', 'Qwe!2345']
+    ['手机号', '138-0013-8000'], ['身份证', '110101199003071233'],
+    ['手机号', '6222021234567894'], ['工号/学号', 'A1027'],
+    ['邮箱', 'zhang.san@yunshen-tech.com.cn'], ['IP 地址', '10.12.33.44'],
+    ['数据库连接串', 'mysql://root:Pa55w0rd@10.12.33.9:3306/prod'],
+    ['OpenAI 密钥', 'sk-proj-AbCdEf1234567890XyZq'], ['口令', 'Qwe!2345']
   ];
-  for (const [kind, raw] of required) {
-    assert.ok(!mainResult.text.includes(raw), `${kind}: original value remains`);
-    assert.ok(mainResult.hits.some(hit => hit.token.startsWith(`[${kind === '6222021234567894' ? 'CARD' : kind}_`)
-      || (kind === '6222021234567894' && hit.token.startsWith('[ACCOUNT_'))), `${kind}: no replacement hit`);
+  for (const [label, raw] of required) {
+    assert.ok(!mainResult.text.includes(raw), `${label}: original value remains`);
+  }
+  // 银行卡号这条会与 cn-bank-account 争同一段文本，谁赢都可以，但必须被替换
+  assert.ok(mainResult.hits.some(hit => hit.label === '银行卡号' || hit.label === '银行账号'));
+  for (const label of ['手机号', '身份证', '工号/学号', '邮箱', 'IP 地址', '数据库连接串', 'OpenAI 密钥', '口令']) {
+    assert.ok(mainResult.hits.some(hit => hit.label === label), `${label}: no replacement hit`);
   }
   assert.ok(mainResult.text.includes('深圳市云深科技有限公司'));
   assert.ok(mainResult.text.includes('张三'));
@@ -47,6 +50,14 @@ check('§10.1 main sample: all required values are replaced', () => {
   assert.ok(mainResult.text.includes('密码：'));
   assert.ok(!mainResult.text.includes('10.12.33.9:3306/prod'));
   assert.equal(mainResult.blocked, false);
+});
+check('§10.1 占位符是中文语义标签，不是随机码', () => {
+  for (const hit of mainResult.hits) {
+    assert.match(hit.token, /^\[[^[\]\n]{1,20}\]$/, `unexpected token shape: ${hit.token}`);
+    assert.ok(!/_[0-9A-F]{4}\]$/.test(hit.token), `随机码没有换掉: ${hit.token}`);
+  }
+  assert.ok(mainResult.text.includes('[手机号]'));
+  assert.ok(mainResult.text.includes('[身份证]'));
 });
 check('§10.1 full database URI including database path is consumed', () => {
   const hit = scan(mainInput, rules).find(item => item.ruleId === 'db-uri');
@@ -72,18 +83,19 @@ check('same Session reuses token for repeated phone value', () => {
   assert.equal(result.hits.length, 2);
   assert.equal(result.hits[0].token, result.hits[1].token);
 });
-check('different Sessions produce different tokens', () => {
-  const first = safeRedact('13800138000', { session: new Session() }).hits[0].token;
-  const second = safeRedact('13800138000', { session: new Session() }).hits[0].token;
-  assert.notEqual(first, second);
+check('同一会话内同类不同值递增编号', () => {
+  const session = new Session();
+  const result = safeRedact('13800138000 和 13900139000', { session });
+  assert.deepEqual(result.hits.map(hit => hit.token), ['[手机号]', '[手机号_2]']);
 });
-check('null Session uses a valid random token without throwing', () => {
-  const result = safeRedact('13800138000', { session: null });
-  assert.match(result.hits[0].token, /^\[[A-Z]{2,12}_[0-9A-F]{4}\]$/);
+check('不传 Session 时同一次调用内仍然去重', () => {
+  const result = safeRedact('13800138000 / 13800138000', { session: null });
+  assert.equal(result.hits[0].token, result.hits[1].token);
+  assert.match(result.hits[0].token, /^\[手机号\]$/);
 });
-check('customTerms replaces literal term', () => {
+check('customTerms replaces literal term with a readable placeholder', () => {
   const result = safeRedact('张三今天到岗', { customTerms: ['张三'] });
-  assert.match(result.text, /^\[TERM_[0-9A-F]{4}\]今天到岗$/);
+  assert.match(result.text, /^\[自定义词\]今天到岗$/);
 });
 check('semantic company rule is enabled only when requested', () => {
   const input = '请分析深圳市云深科技有限公司的供应链风险';
@@ -123,17 +135,17 @@ check('valueGroup positions are original-text coordinates', () => {
   assert.equal(hit.end, 8);
   assert.equal('工号：A1027'.slice(hit.start, hit.end), 'A1027');
 });
-// 注意：输入里必须真的含有一个会产生 [PHONE_xxxx] token 的值。
-// 如果只传 'PHONE'（两个字），永远产不出 token，断言必然通过，等于没测。
-check('customTerms PHONE does not match inside a produced token', () => {
-  const result = safeRedact('电话 13800138000', { customTerms: ['PHONE'], session: new Session() });
-  assert.match(result.text, /\[PHONE_[0-9A-F]{4}\]/);
+// 个人词表里如果填了和占位符同名的词（例如「手机号」），
+// 二次扫描会命中自己产出的占位符——必须靠 token 区间过滤挡掉，不能误报 blocked。
+check('customTerms 与占位符同名时不产生假阻断', () => {
+  const result = safeRedact('电话 13800138000', { customTerms: ['手机号'], session: new Session() });
+  assert.equal(result.text, '电话 [手机号]');
   assert.equal(result.blocked, false);
   assert.equal(result.residuals.length, 0);
 });
-check('customTerms IP does not match inside a produced token', () => {
-  const result = safeRedact('内网 10.1.2.3', { customTerms: ['IP'], session: new Session() });
-  assert.match(result.text, /\[IP_[0-9A-F]{4}\]/);
+check('customTerms 与 IP 占位符同名时不产生假阻断', () => {
+  const result = safeRedact('内网 10.1.2.3', { customTerms: ['IP地址'], session: new Session() });
+  assert.equal(result.text, '内网 [IP地址]');
   assert.equal(result.blocked, false);
   assert.equal(result.residuals.length, 0);
 });

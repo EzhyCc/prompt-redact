@@ -249,7 +249,7 @@ function renderMirror(text, kept) {
 }
 
 function renderOutput(text) {
-  el.output.innerHTML = esc(text).replace(/\[[A-Z]{2,12}_[0-9A-F]{4}\]/g, match => `<span class="tok">${match}</span>`);
+  el.output.innerHTML = esc(text).replace(/\[[^[\]\n]{1,20}\]/g, match => `<span class="tok">${match}</span>`);
 }
 
 function autoGrow() {

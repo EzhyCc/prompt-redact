@@ -1,47 +1,62 @@
-import { DEFAULT_MAX_ENTRIES, MAX_TOKEN_COLLISION_RETRY } from './constants.js';
+import { DEFAULT_MAX_ENTRIES } from './constants.js';
 
-const TYPE_RE = /^[A-Z]{2,12}$/;
+/** 占位符里允许出现的字符：去掉方括号、空白和控制字符。 */
+const UNSAFE = /[[\]\s\u0000-\u001F\u007F]/g;
+const MAX_NAME_LENGTH = 20;
+
+const FALLBACK = 'REDACTED';
 
 /**
- * Generate a cryptographically random token for a valid uppercase type.
- * @param {string} type Token type, consisting of 2–12 uppercase letters.
- * @returns {string} A token in the form `[TYPE_XXXX]`.
- * @throws {TypeError} If type is invalid.
- * @throws {Error} If a secure random number generator is unavailable.
+ * 把规则的中文 label 收敛成一个能放进方括号的名字。
+ * @param {unknown} input
+ * @returns {string}
  */
-export function randomToken(type) {
-  if (typeof type !== 'string' || !TYPE_RE.test(type)) {
-    throw new TypeError('type must match /^[A-Z]{2,12}$/');
-  }
-
-  const cryptoProvider = globalThis.crypto;
-  if (!cryptoProvider || typeof cryptoProvider.getRandomValues !== 'function') {
-    throw new Error('A cryptographically secure random number generator is required');
-  }
-
-  const random = new Uint16Array(1);
-  cryptoProvider.getRandomValues(random);
-  const suffix = random[0].toString(16).toUpperCase().padStart(4, '0');
-  return `[${type}_${suffix}]`;
+export function placeholderName(input) {
+  const cleaned = String(input ?? '').replace(UNSAFE, '').slice(0, MAX_NAME_LENGTH);
+  return cleaned || FALLBACK;
 }
 
 /**
- * In-memory, session-scoped mapping between original string values and random tokens.
+ * 组装占位符：第一个是 `[手机号]`，同名的第二个起加序号 `[手机号_2]`。
+ * @param {string} base
+ * @param {number} index 从 1 开始
+ * @returns {string}
+ */
+export function placeholder(base, index) {
+  return index <= 1 ? `[${base}]` : `[${base}_${index}]`;
+}
+
+/**
+ * 不建会话时用：每次都从 `[手机号]` 开始，不保证跨调用稳定。
+ * @param {unknown} name
+ * @returns {string}
+ */
+export function barePlaceholder(name) {
+  return placeholder(placeholderName(name), 1);
+}
+
+/**
+ * 会话级映射：同一个值在同一会话里复用同一个占位符。
+ *
+ * 占位符是可读的中文标签，不是随机码——因为这份文本常常要被写进正式文档，
+ * `[报价总额]` 人能读懂、能手工替换，`[AMOUNT_9F2A]` 不行。
  */
 export class Session {
-  /** @type {Map<string, string>} */
-  #keyToToken = new Map();
+  /** @type {Map<string, string>} 归一化值 → 占位符 */
+  #byValue = new Map();
 
-  /** @type {Map<string, string>} */
-  #tokenToValue = new Map();
+  /** @type {Map<string, string>} 占位符 → 首次见到的原始值 */
+  #byPlaceholder = new Map();
+
+  /** @type {Map<string, number>} 标签 → 已用到的最大序号 */
+  #counters = new Map();
 
   /** @type {number} */
   #maxEntries;
 
   /**
-   * Create an in-memory session.
    * @param {{ maxEntries?: number }} [opts]
-   * @throws {TypeError} If maxEntries is not an integer greater than or equal to 1.
+   * @throws {TypeError} maxEntries 必须是 ≥1 的整数。
    */
   constructor({ maxEntries = DEFAULT_MAX_ENTRIES } = {}) {
     if (!Number.isInteger(maxEntries) || maxEntries < 1) {
@@ -51,78 +66,61 @@ export class Session {
   }
 
   /**
-   * Return the existing token for a value, or create and store a new token.
-   * Whitespace and hyphens are removed from the lookup key only; the first
-   * encountered string representation is retained for lookup and entries.
-   * @param {string} type Token type, consisting of 2–12 uppercase letters.
-   * @param {unknown} value Original value; null and undefined are not accepted.
-   * @returns {string} The stable token for this type and normalized value.
-   * @throws {TypeError} If type or value is invalid.
-   * @throws {Error} If a unique token cannot be generated within the retry limit.
+   * 取得（或新建）某个值对应的占位符。
+   * @param {string} name 展示用标签，通常取规则的 label，例如「手机号」。
+   * @param {unknown} value 原始值；null / undefined 不接受。
+   * @returns {string} 形如 `[手机号]` 或 `[手机号_2]`。
+   * @throws {TypeError} value 为 null / undefined 时抛出。
    */
-  tokenFor(type, value) {
-    if (typeof type !== 'string' || !TYPE_RE.test(type)) {
-      throw new TypeError('type must match /^[A-Z]{2,12}$/');
-    }
+  tokenFor(name, value) {
     if (value === null || value === undefined) {
       throw new TypeError('value must not be null or undefined');
     }
 
+    const base = placeholderName(name);
     const originalValue = String(value);
-    const normalizedValue = originalValue.replace(/[\s-]/g, '');
-    const key = `${type}|${normalizedValue}`;
-    const existingToken = this.#keyToToken.get(key);
-    if (existingToken !== undefined) return existingToken;
+    const key = `${base}|${originalValue.replace(/[\s-]/g, '')}`;
 
-    let token;
-    let retries = 0;
-    while (true) {
-      const candidate = randomToken(type);
-      if (!this.#tokenToValue.has(candidate)) {
-        token = candidate;
-        break;
-      }
-      if (retries >= MAX_TOKEN_COLLISION_RETRY) {
-        throw new Error(`Unable to generate a unique token after ${MAX_TOKEN_COLLISION_RETRY} retries`);
-      }
-      retries += 1;
+    const existing = this.#byValue.get(key);
+    if (existing !== undefined) return existing;
+
+    if (this.#byPlaceholder.size >= this.#maxEntries) this.clear();
+
+    let index = (this.#counters.get(base) ?? 0) + 1;
+    let token = placeholder(base, index);
+    while (this.#byPlaceholder.has(token)) {
+      index += 1;
+      token = placeholder(base, index);
     }
 
-    if (this.#tokenToValue.size >= this.#maxEntries) this.clear();
-
-    this.#keyToToken.set(key, token);
-    this.#tokenToValue.set(token, originalValue);
+    this.#counters.set(base, index);
+    this.#byValue.set(key, token);
+    this.#byPlaceholder.set(token, originalValue);
     return token;
   }
 
   /**
-   * Look up the first-seen original string value for a token.
-   * @param {string} token Token to look up.
-   * @returns {string | undefined} The original string, or undefined when absent.
+   * @param {string} token
+   * @returns {string | undefined} 首次见到的原始值。
    */
   lookup(token) {
-    return this.#tokenToValue.get(token);
+    return this.#byPlaceholder.get(token);
   }
 
-  /**
-   * Get the number of active mappings.
-   * @returns {number} Current mapping count.
-   */
+  /** @returns {number} 当前映射条数。 */
   size() {
-    return this.#tokenToValue.size;
+    return this.#byPlaceholder.size;
   }
 
-  /** Clear all mappings held by this session. @returns {void} */
+  /** 清空全部映射。@returns {void} */
   clear() {
-    this.#keyToToken.clear();
-    this.#tokenToValue.clear();
+    this.#byValue.clear();
+    this.#byPlaceholder.clear();
+    this.#counters.clear();
   }
 
-  /**
-   * Return a snapshot of `[token, originalValue]` entries.
-   * @returns {Array<[string, string]>} A new array containing the active mappings.
-   */
+  /** @returns {Array<[string, string]>} 占位符 → 原始值 的快照。 */
   entries() {
-    return Array.from(this.#tokenToValue.entries());
+    return Array.from(this.#byPlaceholder.entries());
   }
 }
