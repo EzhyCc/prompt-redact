@@ -170,6 +170,51 @@
   </div>
 </div>
 
+<div class="section">
+  <h2>插件设置</h2>
+  <div class="claim">
+    <div class="hint" style="margin-top:0">这里改的是 DSH 插件读的配置文件。保存后需要重启 DSH（或重载插件）才生效。</div>
+    <table style="margin-top:10px">
+      <tbody>
+        <tr>
+          <td style="width:150px">总开关</td>
+          <td><label><input type="checkbox" id="cfgEnabled"> 启用脱敏</label>
+            <span class="hint" style="margin-left:10px">关掉后插件完全不介入，请求原样透传</span></td>
+        </tr>
+        <tr>
+          <td>语义类规则</td>
+          <td><label><input type="checkbox" id="cfgSemantic"> 启用</label>
+            <span class="hint" style="margin-left:10px">会把「分析××公司的风险」里的公司名也换掉</span></td>
+        </tr>
+        <tr>
+          <td>工具结果脱敏</td>
+          <td><label><input type="checkbox" id="cfgTools"> 启用</label>
+            <span class="hint" style="margin-left:10px">上传文件的内容要靠它；代价是模型读到的代码也会被改写</span></td>
+        </tr>
+        <tr>
+          <td>个人词表</td>
+          <td><input type="text" id="cfgTerms" placeholder="张三, 某某科技, 华强北项目（逗号分隔）"></td>
+        </tr>
+        <tr>
+          <td>映射上限</td>
+          <td><input type="text" id="cfgMaxEntries" style="width:110px" inputmode="numeric">
+            <span class="hint" style="margin-left:10px">超出后整体清空</span></td>
+        </tr>
+        <tr>
+          <td>单块文本上限</td>
+          <td><input type="text" id="cfgMaxText" style="width:110px" inputmode="numeric">
+            <span class="hint" style="margin-left:10px">字符数，超过就跳过脱敏，避免卡住对话</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="row">
+      <button id="cfgSave">保存配置</button>
+      <span class="hint" id="cfgStatus" style="margin:0"></span>
+    </div>
+    <div class="hint">配置文件：<code id="cfgPath">读取中…</code></div>
+  </div>
+</div>
+
 <script type="module">
 import { redact, scan, resolveConflicts } from '../src/index.js';
 import { Session } from '../src/session.js';
@@ -363,6 +408,70 @@ $('claimCopy').addEventListener('click', async () => {
     setTimeout(() => { $('claimCopy').textContent = '复制 JSON'; }, 1200);
   } catch { $('claimCopy').textContent = '复制失败'; }
 });
+
+// ── 插件设置 ────────────────────────────────────────────────────────
+const cfg = {
+  enabled: $('cfgEnabled'), semantic: $('cfgSemantic'), tools: $('cfgTools'),
+  terms: $('cfgTerms'), maxEntries: $('cfgMaxEntries'), maxText: $('cfgMaxText'),
+  save: $('cfgSave'), status: $('cfgStatus'), path: $('cfgPath')
+};
+
+function setCfgStatus(text, tone) {
+  cfg.status.textContent = text;
+  cfg.status.style.color = tone === 'error' ? '#b4552a' : (tone === 'ok' ? '#2f6b3a' : '');
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config', { cache: 'no-store' });
+    const data = await res.json();
+    cfg.path.textContent = data.path ?? '（未知）';
+    const c = data.config ?? {};
+    cfg.enabled.checked = c.enabled !== false;
+    cfg.semantic.checked = c.enableSemantic === true;
+    cfg.tools.checked = c.redactToolResults === true;
+    cfg.terms.value = Array.isArray(c.customTerms) ? c.customTerms.join(', ') : '';
+    cfg.maxEntries.value = c.maxEntries ?? 500;
+    cfg.maxText.value = c.maxTextLength ?? 200000;
+    if (data.error) setCfgStatus(data.error, 'error');
+    else setCfgStatus(data.config ? '已载入现有配置' : '还没有配置文件，保存后会创建', 'muted');
+  } catch (error) {
+    cfg.path.textContent = '（读取失败）';
+    setCfgStatus(`读取失败：${error.message}`, 'error');
+  }
+}
+
+cfg.save.addEventListener('click', async () => {
+  const payload = {
+    enabled: cfg.enabled.checked,
+    enableSemantic: cfg.semantic.checked,
+    redactToolResults: cfg.tools.checked,
+    customTerms: cfg.terms.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean),
+    maxEntries: Number(cfg.maxEntries.value) || 500,
+    maxTextLength: Number(cfg.maxText.value) || 200000
+  };
+  cfg.save.disabled = true;
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setCfgStatus(data.error ?? `保存失败 HTTP ${res.status}`, 'error');
+      return;
+    }
+    cfg.path.textContent = data.path;
+    setCfgStatus('已保存，重启 DSH（或重载插件）后生效', 'ok');
+  } catch (error) {
+    setCfgStatus(`保存失败：${error.message}`, 'error');
+  } finally {
+    cfg.save.disabled = false;
+  }
+});
+
+loadConfig();
 
 el.input.value = SAMPLE;
 if (await loadRules()) run();

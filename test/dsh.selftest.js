@@ -4,7 +4,8 @@
 // 找不到 DSH 安装时整组跳过（打印 0 passed, 0 failed），这样 CI 上跑不受影响。
 // 指定安装位置：设置环境变量 DSH_ROOT 指向 resources/app/dsh。
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -98,6 +99,26 @@ const userText = () => ([
     assert.ok(JSON.stringify(seen[0]).includes('138-0013-8000'), '第一次应当是原始请求');
     assert.ok(JSON.stringify(seen[1]).includes('[手机号]'), '第二次应当是改写后的请求');
   });
+}
+
+// ── 配置文件覆盖 cordis 配置（设置页写的那个文件） ──────────────────
+{
+  const home = mkdtempSync(join(tmpdir(), 'pr-dsh-'));
+  writeFileSync(join(home, 'prompt-redact.config.json'), JSON.stringify({ enabled: false }), 'utf8');
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const { ctx, seen } = await boot({ enabled: true });
+    await call(ctx, userText());
+    check('配置文件覆盖 cordis 配置', () => {
+      const payload = JSON.stringify(seen.at(-1));
+      assert.ok(payload.includes('138-0013-8000'), 'enabled:false 时应当原样透传');
+      assert.ok(!payload.includes('[手机号]'));
+    });
+  } finally {
+    if (previous === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previous;
+  }
 }
 
 // ── 关掉总开关必须完全透传 ─────────────────────────────────────────
