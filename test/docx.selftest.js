@@ -118,6 +118,38 @@ try {
     assert.ok(text.includes('项目简介'));
     assert.ok(text.includes('初验目的'));
   });
+
+  // 字号必须和模板正文一致：曾经用过按样式名猜正文样式，结果 10.5pt 覆盖了模板的 12pt
+  const SIGNATURE = `import json, sys
+from docx import Document
+def sig(path):
+    out = []
+    for p in Document(path).paragraphs:
+        if not p.text.strip() or p.style.name.startswith('Heading'):
+            continue
+        run = p.runs[0] if p.runs else None
+        out.append([
+            p.style.name,
+            run.font.size.pt if run is not None and run.font.size else None,
+            p.style.font.size.pt if p.style.font.size else None
+        ])
+    return out[:3]
+print(json.dumps({"base": sig(sys.argv[1]), "product": sig(sys.argv[2])}, ensure_ascii=False))
+`;
+  writeFileSync(join(work, 'sig.py'), SIGNATURE, 'utf8');
+  const sigRun = spawnSync(python, [join(work, 'sig.py'), redactedPath, productPath], { encoding: 'utf8' });
+
+  check('成品正文字号与模板一致（不靠样式名猜）', () => {
+    assert.equal(sigRun.status, 0, sigRun.stderr);
+    const { base, product } = JSON.parse(sigRun.stdout);
+    assert.ok(base.length > 0 && product.length > 0, '取样为空');
+    assert.deepEqual(product[0], base[0], `正文字号不一致：模板 ${JSON.stringify(base[0])} 成品 ${JSON.stringify(product[0])}`);
+  });
+
+  check('正文里没有混入标题样式', () => {
+    const { product } = JSON.parse(sigRun.stdout);
+    assert.ok(product.every(([style]) => !style.startsWith('Heading')), '正文段落用了 Heading 样式');
+  });
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
