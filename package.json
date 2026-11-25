@@ -3,6 +3,12 @@
   "version": "0.0.1",
   "description": "提示词脱敏：在提示词发给 AI 之前，于本地把敏感信息替换为占位符。开源、零依赖、纯本地处理。",
   "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./core": "./src/index.js",
+    "./rules/*": "./rules/*"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=20"
