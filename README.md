@@ -314,3 +314,5 @@ DSH 里上传的文件**不会**作为正文随你的消息发出。它会被投
 ## License
 
 MIT License，详见 [LICENSE](LICENSE)。
+
+安全问题怎么报、什么样的 PR 会被拒，见 [SECURITY.md](SECURITY.md)。
