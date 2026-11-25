@@ -192,6 +192,11 @@
             <span class="hint" style="margin-left:10px">上传文件的内容要靠它；代价是模型读到的代码也会被改写</span></td>
         </tr>
         <tr>
+          <td>会话记录脱敏</td>
+          <td><label><input type="checkbox" id="cfgSessionLog"> 启用</label>
+            <span class="hint" style="margin-left:10px">让聊天界面里自己那条消息也显示占位符；会改写会话日志</span></td>
+        </tr>
+        <tr>
           <td>个人词表</td>
           <td><input type="text" id="cfgTerms" placeholder="张三, 某某科技, 华强北项目（逗号分隔）"></td>
         </tr>
@@ -412,6 +417,7 @@ $('claimCopy').addEventListener('click', async () => {
 // ── 插件设置 ────────────────────────────────────────────────────────
 const cfg = {
   enabled: $('cfgEnabled'), semantic: $('cfgSemantic'), tools: $('cfgTools'),
+  sessionLog: $('cfgSessionLog'),
   terms: $('cfgTerms'), maxEntries: $('cfgMaxEntries'), maxText: $('cfgMaxText'),
   save: $('cfgSave'), status: $('cfgStatus'), path: $('cfgPath')
 };
@@ -430,6 +436,7 @@ async function loadConfig() {
     cfg.enabled.checked = c.enabled !== false;
     cfg.semantic.checked = c.enableSemantic === true;
     cfg.tools.checked = c.redactToolResults === true;
+    cfg.sessionLog.checked = c.redactSessionLog === true;
     cfg.terms.value = Array.isArray(c.customTerms) ? c.customTerms.join(', ') : '';
     cfg.maxEntries.value = c.maxEntries ?? 500;
     cfg.maxText.value = c.maxTextLength ?? 200000;
@@ -446,6 +453,7 @@ cfg.save.addEventListener('click', async () => {
     enabled: cfg.enabled.checked,
     enableSemantic: cfg.semantic.checked,
     redactToolResults: cfg.tools.checked,
+    redactSessionLog: cfg.sessionLog.checked,
     customTerms: cfg.terms.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean),
     maxEntries: Number(cfg.maxEntries.value) || 500,
     maxTextLength: Number(cfg.maxText.value) || 200000

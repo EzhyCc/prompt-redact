@@ -48,6 +48,7 @@ const CONFIG_SHAPE = {
   enabled: value => typeof value === 'boolean',
   enableSemantic: value => typeof value === 'boolean',
   redactToolResults: value => typeof value === 'boolean',
+  redactSessionLog: value => typeof value === 'boolean',
   customTerms: value => Array.isArray(value) && value.every(item => typeof item === 'string'),
   maxEntries: value => Number.isInteger(value) && value > 0,
   maxTextLength: value => Number.isInteger(value) && value > 0

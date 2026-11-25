@@ -128,7 +128,46 @@ const userText = () => ([
   }
 }
 
-// ── 关掉总开关必须完全透传 ─────────────────────────────────────────
+// ── 会话写入脱敏（让界面里自己那条消息也显示占位符） ────────────────
+function makeFakeSession() {
+  const calls = [];
+  return {
+    id: 'fake',
+    append(type, data) { calls.push({ type, data }); return { type }; },
+    calls
+  };
+}
+
+for (const flag of [false, true]) {
+  const { ctx } = await boot({ enabled: true, redactSessionLog: flag });
+  const session = makeFakeSession();
+  ctx.emit('session/created', session);
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  session.append('user/message', { role: 'user', content: [{ type: 'text', text: '手机 13800138000，密码：Qwe!2345' }] });
+  session.append('assistant/message', { role: 'assistant', content: [{ type: 'text', text: '收到 13800138000' }] });
+  session.append('turn/start', { turn: 1 });
+
+  const userPayload = JSON.stringify(session.calls[0]?.data ?? '');
+  if (flag) {
+    check('会话记录脱敏：user/message 被替换', () => {
+      assert.ok(userPayload.includes('[手机号]'), userPayload);
+      assert.ok(!userPayload.includes('13800138000'));
+      assert.ok(userPayload.includes('[口令]'));
+    });
+    check('会话记录脱敏：assistant 与其它事件不动', () => {
+      assert.ok(JSON.stringify(session.calls[1]?.data).includes('13800138000'));
+      assert.equal(session.calls[2]?.data?.turn, 1);
+    });
+  } else {
+    check('会话记录脱敏关闭时不包装', () => {
+      assert.equal(session.__promptRedactWrapped, undefined);
+      assert.ok(userPayload.includes('13800138000'));
+    });
+  }
+}
+
+// ── 开关关闭时必须完全透传 ─────────────────────────────────────────
 {
   const { ctx, seen } = await boot({ enabled: false });
   await call(ctx, userText());

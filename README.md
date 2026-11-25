@@ -154,8 +154,25 @@ https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.tar.gz
 | `enableSemantic` | `false` | 语义类规则（公司名）。开了会把"分析××公司的风险"里的公司名也换掉 |
 | `customTerms` | `[]` | 个人词表，整词匹配，填人名、客户名、项目代号 |
 | `redactToolResults` | `false` | 连工具结果一起脱敏。**上传文件的内容要靠它**，见下 |
+| `redactSessionLog` | `false` | 把脱敏点前移到「消息写入会话记录之前」，聊天界面里自己那条消息也显示占位符 |
 | `maxTextLength` | `200000` | 单块文本超过这个字符数就跳过脱敏，避免卡住对话 |
 | `maxEntries` | `500` | 映射上限，超出整体清空 |
+
+### `redactSessionLog`：让界面也显示占位符
+
+默认只改出网请求，所以**聊天界面里你自己那条消息仍是原文**（DSH 把原文写进 append-only 会话日志，界面读的是日志）。
+
+打开这个开关后，插件会包一层 `session.append`，在 `user/message` 落盘之前完成替换。效果：
+
+| | 默认 | 开了 `redactSessionLog` |
+|---|---|---|
+| 发给 AI 的 | 占位符 | 占位符 |
+| 界面里自己那条消息 | 原文 | 占位符 |
+| 会话日志里存的 | 原文 | 占位符 |
+
+**代价**：日志里不再有原文，你自己的历史消息就永久读不了了。想要原文就先用 `prompt-redact redact --save-map` 把映射存下来，之后 `fill` 回去。
+
+**风险**：这是对宿主内部的侵入（包装 `append`）。包装失败会静默跳过并在日志留警告，不影响对话，但气泡还是原文。
 
 ### 配置放在哪
 
