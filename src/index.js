@@ -111,12 +111,34 @@ export function redact(text, opts = {}) {
   }
 
   const activeRules = suppliedRules.filter(rule => rule && (rule.tier !== 'semantic' || opts.enableSemantic === true));
-  const terms = Array.isArray(opts.customTerms) ? opts.customTerms.filter(value => typeof value === 'string' && Boolean(value)) : [];
-  if (terms.length > 0) {
+
+  // 个人词表支持两种写法：
+  //   ["张三", "某某科技"]                      → 占位符统一是 [自定义词]
+  //   { "某某科技": "客户", "某某医院": "医院" }   → 占位符是 [客户]、[医院]
+  // 命名版本读起来好得多，正式文档里 `[客户]` 比 `[自定义词_4]` 有用。
+  const termGroups = new Map();
+  const addTerm = (value, label) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    const name = String(label ?? '').trim() || '自定义词';
+    if (!termGroups.has(name)) termGroups.set(name, []);
+    termGroups.get(name).push({ type: 'literal', value: value.trim() });
+  };
+
+  if (Array.isArray(opts.customTerms)) {
+    for (const item of opts.customTerms) {
+      if (typeof item === 'string') addTerm(item, '自定义词');
+      else if (item && typeof item === 'object') addTerm(item.value, item.label);
+    }
+  } else if (opts.customTerms && typeof opts.customTerms === 'object') {
+    for (const [value, label] of Object.entries(opts.customTerms)) addTerm(value, label);
+  }
+
+  let termIndex = 0;
+  for (const [label, match] of termGroups) {
+    termIndex += 1;
     activeRules.push({
-      id: 'user-term', label: '自定义词', category: 'custom', tier: 'format',
-      severity: 'high', token: 'TERM',
-      match: terms.map(value => ({ type: 'literal', value }))
+      id: `user-term:${termIndex}`, label, category: 'custom', tier: 'format',
+      severity: 'high', token: 'TERM', match
     });
   }
 
