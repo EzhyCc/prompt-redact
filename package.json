@@ -6,6 +6,7 @@
   "main": "./lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./core": "./src/index.js",
     "./rules/*": "./rules/*"
   },
@@ -20,6 +21,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     },
     "install": {
       "preferred": "tarball",
