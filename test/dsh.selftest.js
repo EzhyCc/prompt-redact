@@ -160,9 +160,12 @@ for (const flag of [false, true]) {
       assert.equal(session.calls[2]?.data?.turn, 1);
     });
   } else {
-    check('会话记录脱敏关闭时不包装', () => {
-      assert.equal(session.__promptRedactWrapped, undefined);
-      assert.ok(userPayload.includes('13800138000'));
+    // 现在始终包装 session.append，开关在运行时判断 —— 这样设置页里打开
+    // 「界面也显示占位符」立刻生效，不用重启 DSH。关闭时必须完全无操作。
+    check('会话记录脱敏关闭时：已包装但内容一字不改', () => {
+      assert.equal(session.__promptRedactWrapped, true, '应当已包装，否则无法热切换');
+      assert.ok(!userPayload.includes('[手机号]'), '关闭后仍被改写');
+      assert.ok(userPayload.includes(String(13800138000)), '原文应当保留');
     });
   }
 }

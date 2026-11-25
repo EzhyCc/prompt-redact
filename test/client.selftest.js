@@ -25,7 +25,9 @@ const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8');
 const react = {
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
   useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
-  useMemo: factory => factory()
+  useMemo: factory => factory(),
+  useCallback: fn => fn,
+  useEffect: () => {}
 };
 
 function loadClient(modules) {
@@ -172,7 +174,7 @@ function findOutputPre(node) {
 }
 
 check('组件渲染：输出区是占位符，不是原文', () => {
-  const tree = registered[1].component({});
+  const tree = loadClient({}).exports.__internals.Debugger({});
   const pre = findOutputPre(tree);
   assert.ok(pre, '没找到输出区');
   const output = collectText(pre).join('');
@@ -182,7 +184,7 @@ check('组件渲染：输出区是占位符，不是原文', () => {
 });
 
 check('组件渲染：预览区保留原文并加高亮', () => {
-  const tree = registered[1].component({});
+  const tree = loadClient({}).exports.__internals.Debugger({});
   const marks = [];
   const walk = node => {
     if (!node || typeof node !== 'object') return;
@@ -196,7 +198,7 @@ check('组件渲染：预览区保留原文并加高亮', () => {
 });
 
 check('命中表「命中内容」列显示的是原文，不是空', () => {
-  const tree = registered[1].component({});
+  const tree = loadClient({}).exports.__internals.Debugger({});
 
   let tbody = null;
   const walk = node => {
