@@ -1,0 +1,264 @@
+{
+  "cn-mobile": {
+    "positive": [
+      "13800138000",
+      "138-0013-8000"
+    ],
+    "negative": [
+      "12800138000",
+      "订单号 138001380001"
+    ]
+  },
+  "email": {
+    "positive": [
+      "zhang.san@yunshen-tech.com.cn",
+      "ops+test_1@example.org"
+    ],
+    "negative": [
+      "zhang.san@yunshen-tech",
+      "name@@example.com"
+    ],
+    "regression": [
+      {
+        "text": "postgres://u:p@host",
+        "expected": null
+      }
+    ]
+  },
+  "qq": {
+    "positive": [
+      "QQ:123456",
+      "qq：987654321"
+    ],
+    "negative": [
+      "QQ:1234",
+      "订单号 123456"
+    ]
+  },
+  "wechat": {
+    "positive": [
+      "微信号:wxid_abc123",
+      "WeChat:hello_2026"
+    ],
+    "negative": [
+      "微信号:abc",
+      "订单号 hello_2026"
+    ]
+  },
+  "cn-id-card": {
+    "positive": [
+      "110101199003071233",
+      "身份证号：110101199003071233"
+    ],
+    "negative": [
+      "110101199003071234",
+      "110101199013071233"
+    ]
+  },
+  "cn-uscc": {
+    "positive": [
+      "91310000MA1FL0Q157",
+      "统一社会信用代码：91310000MA1FL0Q157"
+    ],
+    "negative": [
+      "91310000MA1FL0Q158",
+      "91310000MA1FL0Q15I"
+    ]
+  },
+  "cn-passport": {
+    "positive": [
+      "E12345678",
+      "G87654321"
+    ],
+    "negative": [
+      "A12345678",
+      "XE12345678A"
+    ]
+  },
+  "cn-license-plate": {
+    "positive": [
+      "粤B12345",
+      "京AD12345"
+    ],
+    "negative": [
+      "粤I12345",
+      "沪B1234"
+    ]
+  },
+  "employee-id": {
+    "positive": [
+      "工号:A1027",
+      "员工编号 2026-AB"
+    ],
+    "negative": [
+      "工号:A1",
+      "订单号 A1027"
+    ]
+  },
+  "openai-key": {
+    "positive": [
+      "sk-proj-AbCdEf1234567890XyZq",
+      "sk-1234567890abcdef"
+    ],
+    "negative": [
+      "sk-proj-short",
+      "xsk-proj-AbCdEf1234567890XyZq"
+    ]
+  },
+  "anthropic-key": {
+    "positive": [
+      "sk-ant-1234567890abcdef",
+      "sk-ant-api03-abcdefghijklmnop"
+    ],
+    "negative": [
+      "sk-ant-short",
+      "xsk-ant-1234567890abcdef"
+    ]
+  },
+  "github-token": {
+    "positive": [
+      "ghp_123456789012345678901234",
+      "gho_AbCdEfGhIjKlMnOpQrStUvWx"
+    ],
+    "negative": [
+      "ghp_123456789012345",
+      "xghp_123456789012345678901234"
+    ]
+  },
+  "aws-access-key": {
+    "positive": [
+      "AKIA0000000000000000",
+      "AKIA1111111111111111"
+    ],
+    "negative": [
+      "AKIA000000000000000",
+      "XAKIA0000000000000000"
+    ]
+  },
+  "google-api-key": {
+    "positive": [
+      "AIza12345678901234567890123456789012345",
+      "AIzaAbCdEfGhIjKlMnOpQrStUvWxYz012345678"
+    ],
+    "negative": [
+      "AIza1234567890123456789012345678901234",
+      "xAIza12345678901234567890123456789012345"
+    ]
+  },
+  "slack-token": {
+    "positive": [
+      "xoxb-1234567890abcdef",
+      "xoxp-AbCdEf0123456789"
+    ],
+    "negative": [
+      "xoxb-short",
+      "xxoxb-1234567890abcdef"
+    ]
+  },
+  "jwt": {
+    "positive": [
+      "eyJabcdefghijk.abcdefghijk.abcdefghijk",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.signatureABC123"
+    ],
+    "negative": [
+      "eyJshort.abcdefghijk.abcdefghijk",
+      "xeyJabcdefghijk.abcdefghijk.abcdefghijk"
+    ]
+  },
+  "private-key": {
+    "positive": [
+      "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAabc123\n-----END RSA PRIVATE KEY-----",
+      "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMG\n-----END PRIVATE KEY-----"
+    ],
+    "negative": [
+      "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END EC PRIVATE KEY-----",
+      "-----BEGIN RSA PRIVATE KEY-----"
+    ]
+  },
+  "password-kv": {
+    "positive": [
+      "密码：Qwe!2345",
+      "Password=secret123"
+    ],
+    "negative": [
+      "密码：ab",
+      "密码 = 12"
+    ]
+  },
+  "db-uri": {
+    "positive": [
+      "mysql://root:Pa55w0rd@10.0.0.1:3306/prod",
+      "postgresql://user:secret@db.example.com/app"
+    ],
+    "negative": [
+      "mysql://root@10.0.0.1/prod",
+      "https://user:secret@example.com"
+    ],
+    "regression": [
+      {
+        "text": "DB: mysql://u:p@host:3306/prod?ssl=true，后续文本",
+        "expected": "mysql://u:p@host:3306/prod?ssl=true"
+      }
+    ]
+  },
+  "bearer-token": {
+    "positive": [
+      "Bearer abcdefghijklmnop",
+      "bearer eyJabcdefghijk.abcdefghijk"
+    ],
+    "negative": [
+      "Bearer short",
+      "Bearer abc123"
+    ]
+  },
+  "bank-card": {
+    "positive": [
+      "6222021234567894",
+      "4532015112830366"
+    ],
+    "negative": [
+      "6222021234567895",
+      "订单号 6222021234567894X"
+    ]
+  },
+  "cn-bank-account": {
+    "positive": [
+      "账号:123456789012",
+      "对公账号：12345678901234567890"
+    ],
+    "negative": [
+      "账号:12345678901",
+      "订单号:123456789012"
+    ]
+  },
+  "cvv": {
+    "positive": [
+      "CVV:123",
+      "安全码：1234"
+    ],
+    "negative": [
+      "CVV:12",
+      "安全码：12345"
+    ]
+  },
+  "ipv4": {
+    "positive": [
+      "10.12.33.44",
+      "192.168.1.1"
+    ],
+    "negative": [
+      "256.1.1.1",
+      "v1.2.3"
+    ]
+  },
+  "cn-company-name": {
+    "positive": [
+      "深圳市云深科技有限公司",
+      "示例集团"
+    ],
+    "negative": [
+      "深圳市云深科技",
+      "供应链风险分析"
+    ]
+  }
+}

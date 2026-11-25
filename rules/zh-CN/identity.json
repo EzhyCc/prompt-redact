@@ -1,0 +1,83 @@
+{
+  "locale": "zh-CN",
+  "rules": [
+    {
+      "id": "cn-id-card",
+      "label": "身份证",
+      "category": "identity",
+      "tier": "format",
+      "severity": "high",
+      "token": "IDCARD",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![0-9A-Za-z])[1-9][0-9]{5}(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])[0-9]{3}[0-9Xx](?![0-9A-Za-z])",
+          "validate": "cnIdCard"
+        }
+      ],
+      "note": "限定常见 18 位大陆身份证结构并用校验位复核；仍可能命中合成测试号，生日日期的完整日历合法性由校验器负责。"
+    },
+    {
+      "id": "cn-uscc",
+      "label": "统一社会信用代码",
+      "category": "identity",
+      "tier": "format",
+      "severity": "medium",
+      "token": "USCC",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![0-9A-Za-z])[0-9A-HJ-NPQRTUWXY]{2}[0-9]{6}[0-9A-HJ-NPQRTUWXY]{10}(?![0-9A-Za-z])",
+          "validate": "cnUscc"
+        }
+      ],
+      "note": "限定 18 位统一社会信用代码字符集并执行校验；可能命中测试或示例代码。"
+    },
+    {
+      "id": "cn-passport",
+      "label": "护照号",
+      "category": "identity",
+      "tier": "format",
+      "severity": "medium",
+      "token": "PASSPORT",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![A-Za-z0-9])[EGDSP][0-9]{8}(?![A-Za-z0-9])"
+        }
+      ],
+      "note": "覆盖常见中国护照号码形式；可能误报以 E/G/D/S/P 开头的业务编号。"
+    },
+    {
+      "id": "cn-license-plate",
+      "label": "车牌",
+      "category": "identity",
+      "tier": "format",
+      "severity": "medium",
+      "token": "PLATE",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-HJ-NP-Z][A-HJ-NP-Z0-9]{5,6}"
+        }
+      ],
+      "note": "覆盖常见民用车牌字符形态；未校验新能源/特殊号牌全部规则，可能误报模拟车牌或编码。"
+    },
+    {
+      "id": "employee-id",
+      "label": "工号/学号",
+      "category": "identity",
+      "tier": "format",
+      "severity": "low",
+      "token": "EMPID",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:工号|学号|员工号|员工编号|工牌号)[ ]?[:：]?[ ]?([A-Za-z0-9-]{3,20})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "必须由工号/学号等关键词锚定，仅替换捕获组；可能误报关键词后面的普通短编号。"
+    }
+  ]
+}

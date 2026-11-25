@@ -1,0 +1,26 @@
+{
+  "name": "open-privacy-core",
+  "version": "0.0.1",
+  "description": "在数据发给 AI 之前，于本地把敏感信息替换为占位符。",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "bin": {
+    "open-privacy": "tools/cli.js"
+  },
+  "scripts": {
+    "test": "node test/selftest.js",
+    "demo": "node demo.js",
+    "redact": "node tools/cli.js"
+  },
+  "files": [
+    "src",
+    "rules",
+    "tools",
+    "README.md",
+    "LICENSE"
+  ]
+}

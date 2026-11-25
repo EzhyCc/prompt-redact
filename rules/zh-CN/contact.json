@@ -1,0 +1,68 @@
+{
+  "locale": "zh-CN",
+  "rules": [
+    {
+      "id": "cn-mobile",
+      "label": "手机号",
+      "category": "contact",
+      "tier": "format",
+      "severity": "high",
+      "token": "PHONE",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![0-9])1[3-9][0-9][- ]?[0-9]{4}[- ]?[0-9]{4}(?![0-9])",
+          "validate": "cnMobile"
+        }
+      ],
+      "note": "按大陆手机号号段和 11 位结构识别；可能误报格式恰好相同的测试号码或虚构号码。"
+    },
+    {
+      "id": "email",
+      "label": "邮箱",
+      "category": "contact",
+      "tier": "format",
+      "severity": "medium",
+      "token": "EMAIL",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![A-Za-z0-9:/])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}[.][A-Za-z]{2,24}"
+        }
+      ],
+      "note": "识别常见 ASCII 邮箱；可能误报示例地址、文档占位地址或不实际存在的邮箱。"
+    },
+    {
+      "id": "qq",
+      "label": "QQ号",
+      "category": "contact",
+      "tier": "format",
+      "severity": "low",
+      "token": "QQ",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:QQ|qq)[:：]?[ ]?([1-9][0-9]{4,10})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "要求 QQ/qq 标签锚定并只替换号码捕获组；可能误报文档中的示例 QQ 号。"
+    },
+    {
+      "id": "wechat",
+      "label": "微信号",
+      "category": "contact",
+      "tier": "format",
+      "severity": "medium",
+      "token": "WECHAT",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:微信|WeChat|wechat|VX|vx)[号]?[:：]?[ ]?([A-Za-z][-_A-Za-z0-9]{5,19})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "要求微信或 VX 标签锚定并只替换账号；可能误报示例账号或紧随标签的普通英文单词。"
+    }
+  ]
+}

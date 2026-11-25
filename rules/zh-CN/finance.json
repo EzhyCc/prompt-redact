@@ -1,0 +1,53 @@
+{
+  "locale": "zh-CN",
+  "rules": [
+    {
+      "id": "bank-card",
+      "label": "银行卡号",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "CARD",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?<![0-9A-Za-z])[0-9](?:[ -]?[0-9]){14,18}(?![0-9A-Za-z])",
+          "validate": "luhn"
+        }
+      ],
+      "note": "匹配 15–19 位数字并用 Luhn 校验；可能误报恰好通过 Luhn 的长编号，订单号等通常会被校验排除。"
+    },
+    {
+      "id": "cn-bank-account",
+      "label": "银行账号",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "ACCOUNT",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:账号|卡号|账户|对公账号)[ ]?[:：]?[ ]?([0-9]{12,25})",
+          "valueGroup": 1
+        }
+      ],
+      "note": "要求账号/账户关键词锚定，仅替换 12–25 位数字捕获组；可能误报标签后面的企业内部长编号。"
+    },
+    {
+      "id": "cvv",
+      "label": "CVV",
+      "category": "finance",
+      "tier": "format",
+      "severity": "high",
+      "token": "CVV",
+      "match": [
+        {
+          "type": "regex",
+          "pattern": "(?:CVV2?|CVC2?|安全码)[ ]?[:：]?[ ]?([0-9]{3,4})(?![0-9])",
+          "valueGroup": 1
+        }
+      ],
+      "note": "要求 CVV/CVC/安全码标签锚定，仅替换 3–4 位值；可能误报测试文档中的安全码示例或其他三四位验证码。"
+    }
+  ]
+}
