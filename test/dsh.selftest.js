@@ -24,6 +24,12 @@ if (!dshRoot) {
 const load = relative => import(pathToFileURL(join(dshRoot, 'node_modules', '@deepseek-ai', relative)).href);
 const { Context } = await load('cordis/lib/index.js');
 const { LlmRuntime } = await load('dsh-llm/lib/index.js');
+
+// 隔离真实配置：默认指向一个不存在的临时路径，避免开发机上 ~/.prompt-redact/config.json
+// 悄悄盖掉每条用例的 cordis 配置（这个坑真的踩过一次）。
+const isolatedConfig = join(mkdtempSync(join(tmpdir(), 'pr-isolated-')), 'config.json');
+process.env.PROMPT_REDACT_CONFIG = isolatedConfig;
+
 const plugin = await import('../lib/index.js');
 
 let passed = 0;
@@ -103,10 +109,11 @@ const userText = () => ([
 
 // ── 配置文件覆盖 cordis 配置（设置页写的那个文件） ──────────────────
 {
-  const home = mkdtempSync(join(tmpdir(), 'pr-dsh-'));
-  writeFileSync(join(home, 'prompt-redact.config.json'), JSON.stringify({ enabled: false }), 'utf8');
-  const previous = process.env.DSH_HOME;
-  process.env.DSH_HOME = home;
+  const dir = mkdtempSync(join(tmpdir(), 'pr-dsh-'));
+  const configFile = join(dir, 'config.json');
+  writeFileSync(configFile, JSON.stringify({ enabled: false }), 'utf8');
+  const previous = process.env.PROMPT_REDACT_CONFIG;
+  process.env.PROMPT_REDACT_CONFIG = configFile;
   try {
     const { ctx, seen } = await boot({ enabled: true });
     await call(ctx, userText());
@@ -116,8 +123,8 @@ const userText = () => ([
       assert.ok(!payload.includes('[手机号]'));
     });
   } finally {
-    if (previous === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = previous;
+    if (previous === undefined) delete process.env.PROMPT_REDACT_CONFIG;
+    else process.env.PROMPT_REDACT_CONFIG = previous;
   }
 }
 

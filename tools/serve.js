@@ -9,9 +9,10 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { configPath, readableConfigPath } from '../lib/config-path.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -41,12 +42,6 @@ const MIME = new Map([
   ['.md', 'text/markdown; charset=utf-8'],
   ['.txt', 'text/plain; charset=utf-8']
 ]);
-
-/** 插件读的就是这个文件。 */
-function configPath() {
-  const home = process.env.DSH_HOME || join(homedir(), '.dsh');
-  return join(home, 'prompt-redact.config.json');
-}
 
 /** 配置项白名单与类型：只接受这几种键，避免设置页把脏数据写进去。 */
 const CONFIG_SHAPE = {
@@ -113,7 +108,7 @@ const server = createServer(async (req, res) => {
     if (!sameOrigin(req)) return fail(res, 403, '403 跨源请求被拒绝');
 
     if (req.method === 'GET') {
-      const path = configPath();
+      const path = readableConfigPath();
       try {
         const raw = await readFile(path, 'utf8');
         return sendJson(res, 200, { path, config: JSON.parse(raw) });

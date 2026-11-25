@@ -157,6 +157,29 @@ https://github.com/EzhyCc/prompt-redact/archive/refs/heads/main.tar.gz
 | `maxTextLength` | `200000` | 单块文本超过这个字符数就跳过脱敏，避免卡住对话 |
 | `maxEntries` | `500` | 映射上限，超出整体清空 |
 
+### 配置放在哪
+
+**配置属于产品，不属于宿主。** 配置文件是一个，所有适配器共读：
+
+```
+~/.prompt-redact/config.json        ← 默认位置
+$PROMPT_REDACT_CONFIG               ← 环境变量可覆盖（自定义部署 / 测试）
+```
+
+`cordis.patch.yml` 里的值是默认值，配置文件里的键覆盖它。改完需要重启宿主（或重载插件）才生效。设置页（`node tools/serve.js`）写的就是这个文件。
+
+> 为什么不做 DSH 内置的设置页：那需要往 DSH 的 React 插槽里注册一个客户端组件，得为它维护一整套构建管线，而这份工作只服务 DSH 一个宿主——浏览器扩展、本地代理、PWA 一个都用不上。配置和 UI 跟着产品走，宿主只负责读同一个文件。
+
+### 宿主接入契约
+
+接一个新宿主只需要三步，这也是这个项目能被多个 AI 产品复用的原因：
+
+1. 引入 `src/index.js` 的 `redact()`（纯 ESM，无 IO，Node 和浏览器都能跑）
+2. 从 `~/.prompt-redact/config.json` 读 `enabled` / `enableSemantic` / `customTerms` / `redactToolResults`
+3. 在数据离开设备之前调用它，把 `role: user` 的文本块换掉
+
+宿主自己的框架、语言、协议都不影响这三步。
+
 ### 出错时会发生什么（这一段是说给要装它的人看的）
 
 插件是插在对话链路中间的一段代码，它出错不能让你发不出消息。所以：
