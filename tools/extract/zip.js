@@ -44,7 +44,10 @@ export function readZip(buffer) {
     cursor += 46 + nameLength + extraLength + commentLength;
 
     if (name.endsWith('/')) continue; // 目录条目
-    if (!name.startsWith('word/') && !name.startsWith('xl/') && !name.startsWith('ppt/') && name !== '[Content_Types].xml') continue;
+
+    // 不在这里按目录过滤：抽文本的调用方自己按名字取，但「核查整包是否干净」需要看到
+    // docProps/、customXml/、_rels/ 这些部件——早期在这里过滤，导致文档属性里的作者名
+    // 从来没被检查过。
 
     if (buffer.readUInt32LE(localOffset) !== LOC_SIG) continue;
     const localNameLength = buffer.readUInt16LE(localOffset + 26);

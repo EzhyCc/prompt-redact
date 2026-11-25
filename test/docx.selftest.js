@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractOfficeText } from '../tools/extract/office.js';
+import { readZip } from '../tools/extract/zip.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -38,15 +39,34 @@ process.env.PROMPT_REDACT_PYTHON = python;
 
 const work = mkdtempSync(join(tmpdir(), 'pr-docx-test-'));
 
-/** 造一份带假敏感信息的模板。 */
+/** 造一份带假敏感信息的模板：正文 + 文档属性作者 + 修订记录作者。 */
 const FIXTURE = `import sys
 from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
 doc = Document()
 doc.add_paragraph("项目初步验收方案")
 doc.add_heading("1 项目简介", level=1)
 doc.add_paragraph("建设单位：某某科技有限公司，联系人张三，手机 13800138000。")
 doc.add_heading("2 初验目的", level=1)
 doc.add_paragraph("原模板里的说明文字。")
+
+# 文档属性里的作者（真实文档几乎都带，早期版本完全不处理）
+doc.core_properties.author = "张三"
+doc.core_properties.last_modified_by = "张三"
+doc.core_properties.title = "某某科技项目验收方案"
+
+# 修订记录的作者名（w:ins/@w:author），文字可以被规则抓，属性不能
+paragraph = doc.paragraphs[2]
+run = paragraph.runs[0]
+ins = OxmlElement("w:ins")
+ins.set(qn("w:id"), "1")
+ins.set(qn("w:author"), "张三")
+ins.set(qn("w:date"), "2023-01-01T00:00:00Z")
+paragraph._p.insert(0, ins)
+ins.append(run._r)
+
 doc.save(sys.argv[1])
 `;
 
@@ -60,7 +80,7 @@ try {
   const outDir = join(work, 'out');
   const redactRun = spawnSync(process.execPath, [
     CLI, 'redact', '--in', fixture, '--out', outDir,
-    '--terms', '某某科技=客户', '--org'
+    '--terms', '某某科技=客户,张三=当事人', '--org'
   ], { encoding: 'utf8' });
 
   check('redact 命令执行成功', () => assert.equal(redactRun.status, 0, redactRun.stderr));
@@ -90,6 +110,45 @@ try {
     const text = extractOfficeText(readFileSync(redactedPath), '.docx');
     assert.ok(text.includes('项目简介'));
     assert.ok(text.includes('初验目的'));
+  });
+
+  // 早期版本只遍历正文 + 页眉页脚，脚注/文档属性/修订作者全漏。这条按「整个包」查。
+  check('整个 docx 包内没有任何部件残留（含文档属性与修订作者）', () => {
+    const entries = readZip(readFileSync(redactedPath));
+    const dirty = [];
+    for (const [name, data] of entries) {
+      if (!name.endsWith('.xml')) continue;
+      const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+      for (const word of ['张三', '某某科技', '13800138000']) {
+        if (text.includes(word)) dirty.push(`${name} 含 ${word}`);
+      }
+    }
+    assert.deepEqual(dirty, [], dirty.join(' | '));
+  });
+
+  // 曾经 readZip 里有一句「只保留 word/xl/ppt」的过滤，导致 docProps 部件从来没被看见，
+  // 文档属性里的作者名因此一直被漏检。
+  check('zip 读取器不遗漏包内部件（docProps/_rels/customXml）', () => {
+    const entries = readZip(readFileSync(redactedPath));
+    for (const name of ['docProps/core.xml', 'docProps/app.xml', '_rels/.rels']) {
+      assert.ok(entries.has(name), `缺少 ${name}`);
+    }
+  });
+
+  check('文档属性里的作者被替换成占位符', () => {
+    const entries = readZip(readFileSync(redactedPath));
+    const core = entries.get('docProps/core.xml');
+    assert.ok(core, '缺少 docProps/core.xml');
+    const xml = core.toString('utf8');
+    assert.ok(!xml.includes('张三'), '作者名仍在');
+    assert.ok(xml.includes('[当事人]'), '作者没被替换成占位符');
+  });
+
+  check('修订记录的作者属性被替换', () => {
+    const entries = readZip(readFileSync(redactedPath));
+    const xml = entries.get('word/document.xml').toString('utf8');
+    assert.ok(!/w:author="张三"/.test(xml), 'w:author 仍是真名');
+    assert.ok(/w:author="\[当事人\]"/.test(xml), 'w:author 没被替换成占位符');
   });
 
   // ── compose ─────────────────────────────────────────────────────

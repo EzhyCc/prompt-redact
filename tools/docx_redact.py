@@ -1,16 +1,26 @@
 #!/usr/bin/env python
 """就地脱敏一份 docx，并在同一步写出回填映射表。
 
+覆盖范围（这是重点，早期版本只遍历正文+页眉页脚，脚注/修订/属性全漏）：
+  · word/document.xml            正文、表格、文本框、修订内容
+  · word/header*.xml             全部页眉（不是只有第 1 个）
+  · word/footer*.xml             全部页脚
+  · word/footnotes.xml           脚注
+  · word/endnotes.xml            尾注
+  · word/comments.xml            批注正文
+  · docProps/core.xml            标题、作者、最后修改者
+  · docProps/app.xml             公司、管理器
+  · w:author / w:initials 属性    修订记录的作者名与缩写
+  · w:comment/@w:author          批注作者
+
 关键设计：**段落级匹配，run 级落笔**。
 Word 会把一句话拆进多个 run（"某大学" + "某医院"），只按 run 替换会跨不过边界。
 所以把每个段落的 w:t 拼成整串再脱敏；只有真的改动了，才把结果写进第一个 run、
-其余 run 清空。段落样式、编号、页眉页脚都保留；代价是同段内的混排格式会被合并。
+其余 run 清空。段落样式、编号、页眉页脚都保留；代价是同段内混排格式会被合并。
 
 用法：
     python docx_redact.py --in 模板.docx --out 模板-脱敏.docx [--map 映射.json]
                           [--terms '{"圣格灵":"客户"}'] [--org]
-
-不带 --map 时不写映射文件。
 """
 import argparse
 import json
@@ -24,55 +34,106 @@ from docx.oxml.ns import qn
 HERE = os.path.dirname(os.path.abspath(__file__))
 BRIDGE = os.path.join(HERE, "redact-batch.mjs")
 
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+# 只处理这些部件；样式表、编号表、主题等跳过，避免破坏文档结构
+INCLUDE = (
+    "document.xml",
+    "header",
+    "footer",
+    "footnotes.xml",
+    "endnotes.xml",
+    "comments.xml",
+    "docProps/core.xml",
+    "docProps/app.xml",
+)
+
+# 这些属性里可能写着人名
+AUTHOR_ATTRS = (f"{W}author", f"{W}initials")
+
 
 def find_node():
-    """找 node 可执行文件：环境变量优先，其次 PATH。"""
     explicit = os.environ.get("PROMPT_REDACT_NODE")
     if explicit and os.path.exists(explicit):
         return explicit
-    for candidate in (
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "DeepSeek Harness",
-                     "resources", "runtime", "primary-runtime", "dependencies", "node", "bin", "node.exe"),
-    ):
-        if candidate and os.path.exists(candidate):
-            return candidate
-    return "node"
+    candidate = os.path.join(
+        os.environ.get("LOCALAPPDATA", ""), "Programs", "DeepSeek Harness",
+        "resources", "runtime", "primary-runtime", "dependencies", "node", "bin", "node.exe",
+    )
+    return candidate if os.path.exists(candidate) else "node"
 
 
-def collect_paragraph_elements(document):
-    """所有段落元素：正文 + 表格 + 文本框 + 页眉 + 页脚。"""
-    roots = [document.element.body]
-    for section in document.sections:
-        for part in (section.header, section.footer,
-                     section.first_page_header, section.first_page_footer,
-                     section.even_page_header, section.even_page_footer):
-            try:
-                if part is not None and not part.is_linked_to_previous:
-                    roots.append(part._element)
-            except Exception:
+def wanted(part):
+    name = str(part.partname)
+    return any(token in name for token in INCLUDE)
+
+
+def collect_units(document):
+    """把整份文档拆成可脱敏单元。
+
+    返回三类：
+      paragraphs  段落级：整段拼串再脱敏，写回第一个 w:t
+      nodes       散文本节点：元素自身的 .text（如 docProps 里的作者）
+      attrs       属性：修订作者、批注作者
+    """
+    paragraphs, nodes, attrs = [], [], []
+    seen_para, seen_node, seen_attr = set(), set(), set()
+
+    for part in document.part.package.parts:
+        element = getattr(part, "_element", None)
+        if element is None or not wanted(part):
+            continue
+
+        # 段落级：凡是 w:p 内部的文字都按段处理，能跨 run 匹配
+        for paragraph in element.iter(f"{W}p"):
+            if id(paragraph) in seen_para:
                 continue
-
-    paragraphs = []
-    seen = set()
-    for root in roots:
-        for paragraph in root.iter(qn("w:p")):
-            if id(paragraph) in seen:
-                continue
-            seen.add(id(paragraph))
+            seen_para.add(id(paragraph))
             paragraphs.append(paragraph)
-    return paragraphs
+
+        # 散落文本节点：不在任何 w:p 里的（docProps 等）
+        paragraph_ids = {id(p) for p in element.iter(f"{W}p")}
+        for node in element.iter():
+            if not isinstance(node.tag, str):
+                continue
+            if node.tag == f"{W}t":
+                continue
+            if not node.text or not node.text.strip():
+                continue
+            # 祖先里有 w:p 的已经在段落里处理过
+            parent = node.getparent()
+            inside_paragraph = False
+            while parent is not None:
+                if id(parent) in paragraph_ids:
+                    inside_paragraph = True
+                    break
+                parent = parent.getparent()
+            if inside_paragraph:
+                continue
+            if id(node) in seen_node:
+                continue
+            seen_node.add(id(node))
+            nodes.append(node)
+
+        # 属性里的作者名
+        for node in element.iter():
+            if not isinstance(node.tag, str):
+                continue
+            for attr in AUTHOR_ATTRS:
+                value = node.get(attr)
+                if value and (id(node), attr) not in seen_attr:
+                    seen_attr.add((id(node), attr))
+                    attrs.append((node, attr))
+
+    return paragraphs, nodes, attrs
 
 
-def nodes_of(paragraph):
-    return list(paragraph.iter(qn("w:t")))
-
-
-def text_of(paragraph):
-    return "".join(node.text or "" for node in nodes_of(paragraph))
+def paragraph_text(paragraph):
+    return "".join(node.text or "" for node in paragraph.iter(f"{W}t"))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="就地脱敏 docx（段落级匹配，格式不动）")
+    parser = argparse.ArgumentParser(description="就地脱敏 docx（覆盖正文/页眉页脚/脚注/批注/文档属性/修订作者）")
     parser.add_argument("--in", dest="source", required=True)
     parser.add_argument("--out", dest="target", required=True)
     parser.add_argument("--map", dest="map_path", default=None)
@@ -87,8 +148,13 @@ def main():
         return 1
 
     document = Document(args.source)
-    paragraphs = collect_paragraph_elements(document)
-    texts = [text_of(p) for p in paragraphs]
+    paragraphs, nodes, attrs = collect_units(document)
+
+    texts = (
+        [paragraph_text(p) for p in paragraphs]
+        + [node.text or "" for node in nodes]
+        + [node.get(attr) or "" for node, attr in attrs]
+    )
 
     payload = json.dumps({"texts": texts, "terms": terms, "org": args.org}, ensure_ascii=False)
     result = subprocess.run([find_node(), BRIDGE], input=payload.encode("utf-8"),
@@ -98,18 +164,38 @@ def main():
         return 1
 
     data = json.loads(result.stdout.decode("utf-8"))
+    updated = data["texts"]
 
-    rewritten = 0
-    for paragraph, original, updated in zip(paragraphs, texts, data["texts"]):
-        if updated == original or not updated:
+    offset = 0
+    changed_paragraphs = 0
+    for paragraph in paragraphs:
+        original, new = texts[offset], updated[offset]
+        offset += 1
+        if new == original or not new:
             continue
-        nodes = nodes_of(paragraph)
-        if not nodes:
+        nodes_in_paragraph = list(paragraph.iter(f"{W}t"))
+        if not nodes_in_paragraph:
             continue
-        nodes[0].text = updated
-        for node in nodes[1:]:
+        nodes_in_paragraph[0].text = new
+        for node in nodes_in_paragraph[1:]:
             node.text = ""
-        rewritten += 1
+        changed_paragraphs += 1
+
+    changed_nodes = 0
+    for node in nodes:
+        original, new = texts[offset], updated[offset]
+        offset += 1
+        if new != original and new:
+            node.text = new
+            changed_nodes += 1
+
+    changed_attrs = 0
+    for node, attr in attrs:
+        original, new = texts[offset], updated[offset]
+        offset += 1
+        if new != original and new:
+            node.set(attr, new)
+            changed_attrs += 1
 
     document.save(args.target)
 
@@ -118,7 +204,11 @@ def main():
             json.dump({"tokens": data.get("tokens", {})}, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
-    print(f"段落 {len(paragraphs)} 个，改写 {rewritten} 个")
+    print(
+        f"段落 {len(paragraphs)}（改写 {changed_paragraphs}）"
+        f" | 文本节点 {len(nodes)}（改写 {changed_nodes}）"
+        f" | 作者属性 {len(attrs)}（改写 {changed_attrs}）"
+    )
     print(f"输出: {args.target}")
     if args.map_path:
         print(f"映射: {args.map_path}（{len(data.get('tokens', {}))} 条，含真实值，只留本地）")
